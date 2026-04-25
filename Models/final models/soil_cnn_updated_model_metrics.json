@@ -1,0 +1,41 @@
+{
+  "runtime": {
+    "framework": "PyTorch",
+    "pytorch_version": "2.5.1+cu121",
+    "gpu_available": true,
+    "device": "NVIDIA GeForce RTX 4050 Laptop GPU",
+    "gpu_count": 1
+  },
+  "class_names": [
+    "Alluvial_Soil",
+    "Arid_Soil",
+    "Black_Soil",
+    "Laterite_Soil",
+    "Mountain_Soil",
+    "Red_Soil",
+    "Yellow_Soil"
+  ],
+  "split_policy": {
+    "source": "C:\\Users\\manis\\OneDrive\\Desktop\\PA-project\\Dataset\\soil_image_datset\\Soil-image-dataset\\Orignal-Dataset",
+    "train_fraction": 0.7,
+    "validation_fraction": 0.15,
+    "test_fraction": 0.15,
+    "split_type": "stratified",
+    "random_state": 42,
+    "augmentation": "train only"
+  },
+  "counts": {
+    "train": 8000,
+    "train_source_images": 832,
+    "val": 178,
+    "test": 179
+  },
+  "epochs_ran": 20,
+  "best_epoch": 14,
+  "final_train_accuracy": 0.996625,
+  "final_val_accuracy": 0.8146067415730337,
+  "best_val_accuracy": 0.8314606741573034,
+  "test_accuracy": 0.8715083798882681,
+  "model_path": "C:\\Users\\manis\\OneDrive\\Desktop\\PA-project\\Models\\soil_cnn_updated_model.pth",
+  "encoder_path": "C:\\Users\\manis\\OneDrive\\Desktop\\PA-project\\Models\\soil_label_encoder_7class.pkl"
+}

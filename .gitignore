@@ -3,7 +3,7 @@ Dataset/
 solit_dataset/
 
 # Models
-Models/
+# Models/ (Removed to allow pushing models via LFS)
 
 # Python cache
 __pycache__/
