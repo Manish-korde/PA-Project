@@ -4,7 +4,9 @@ import base64
 import io
 import json
 import mimetypes
+import os
 import re
+import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,27 +16,44 @@ import joblib
 import pandas as pd
 from PIL import Image
 
+from agent import FarmAgent
+from analysis.soil_analysis import SoilAnalysisService
+
+# Global Agent Instance
+FARM_AGENT = FarmAgent()
+
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "web"
 MODELS_DIR = ROOT / "Models"
 FINAL_MODELS_DIR = MODELS_DIR / "final models"
 DATASET_DIR = ROOT / "Dataset"
+SOIL_ANALYSIS = SoilAnalysisService(DATASET_DIR / "solit_dataset" / "Soil-Climate-data.csv")
+def first_existing_path(*paths: Path) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
 SOIL_MODEL_PATH = None
-SOIL_ENCODER_PATH = MODELS_DIR / "soil_label_encoder_7class.pkl"
+SOIL_ENCODER_PATH = first_existing_path(
+    FINAL_MODELS_DIR / "soil_label_encoder_7class.pkl",
+    MODELS_DIR / "soil_label_encoder_7class.pkl"
+)
 
 SOIL_ANN_MODEL_PATH = MODELS_DIR / "soil_ann_model_7class.pth"
-SOIL_ANN_ENCODER_PATH = MODELS_DIR / "soil_ann_label_encoder_7class.pkl"
+SOIL_ANN_ENCODER_PATH = first_existing_path(
+    FINAL_MODELS_DIR / "soil_ann_label_encoder_7class.pkl",
+    MODELS_DIR / "soil_ann_label_encoder_7class.pkl"
+)
 SOIL_ANN_SCALER_PATH = MODELS_DIR / "soil_ann_scaler.pkl"
 SOIL_ANN_METRICS_PATH = MODELS_DIR / "soil_ann_model_7class_metrics.json"
 
-CROP_COMPARISON_PATH = MODELS_DIR / "crop_recommendation_model_comparison.json"
-CROP_ANN_MODEL_PATH = MODELS_DIR / "crop_ann_multiclass_model.pth"
-CROP_RF_MODEL_PATH = MODELS_DIR / "crop_random_forest_model.pkl"
-CROP_BOOST_MODEL_PATH = MODELS_DIR / "crop_boosting_model.pkl"
-CROP_LABEL_ENCODER_PATH = MODELS_DIR / "crop_label_encoder.pkl"
-CROP_TREE_PREPROCESSOR_PATH = MODELS_DIR / "crop_tree_preprocessor.pkl"
-CROP_ANN_PREPROCESSOR_PATH = MODELS_DIR / "crop_ann_preprocessor.pkl"
+CROP_PRO_METRICS_PATH = FINAL_MODELS_DIR / "crop_pro_metrics.json"
+CROP_ANN_MODEL_PATH = FINAL_MODELS_DIR / "crop_ann_model.pth"
+CROP_RF_MODEL_PATH = FINAL_MODELS_DIR / "crop_rf_model.pkl"
+CROP_LABEL_ENCODER_PATH = FINAL_MODELS_DIR / "crop_label_encoder.pkl"
+CROP_SCALER_PATH = FINAL_MODELS_DIR / "crop_scaler.pkl"
 
 SOIL_DATASET_PATH = DATASET_DIR / "soil_image_datset"
 TARGET_SOIL_CLASSES = [
@@ -48,11 +67,7 @@ TARGET_SOIL_CLASSES = [
 ]
 
 
-def first_existing_path(*paths: Path) -> Path:
-    for path in paths:
-        if path.exists():
-            return path
-    return paths[0]
+
 
 
 SOIL_MODEL_PATH = first_existing_path(
@@ -103,6 +118,16 @@ try:
     CROP_ANN_PREPROCESSOR = joblib.load(CROP_ANN_PREPROCESSOR_PATH)
 except Exception:
     CROP_ANN_PREPROCESSOR = None
+
+try:
+    CROP_PRO_METRICS = json.loads(CROP_PRO_METRICS_PATH.read_text(encoding="utf-8"))
+except Exception:
+    CROP_PRO_METRICS = {}
+
+try:
+    CROP_SCALER = joblib.load(CROP_SCALER_PATH)
+except Exception:
+    CROP_SCALER = None
 
 try:
     SOIL_MODEL_METRICS = json.loads(SOIL_MODEL_METRICS_PATH.read_text(encoding="utf-8"))
@@ -265,14 +290,14 @@ def inspect_soil_model_binary() -> dict[str, Any]:
 
 
 def recommendation_audit() -> dict[str, Any]:
-    best_crop_model = CROP_COMPARISON.get("best_model")
-    crop_ready = bool(CROP_COMPARISON and CROP_LABEL_ENCODER and CROP_CLASSES)
-    if best_crop_model == "ANN":
-        crop_ready = crop_ready and torch is not None and CROP_ANN_MODEL_PATH.exists() and CROP_ANN_PREPROCESSOR is not None
-    elif best_crop_model == "RandomForest":
-        crop_ready = crop_ready and CROP_RF_MODEL is not None and CROP_TREE_PREPROCESSOR is not None
-    elif best_crop_model:
-        crop_ready = False
+    best_crop_model = CROP_PRO_METRICS.get("best_model")
+    crop_ready = bool(CROP_PRO_METRICS and CROP_LABEL_ENCODER and CROP_CLASSES and CROP_SCALER)
+    
+    if best_crop_model == "RandomForest":
+        crop_ready = crop_ready and CROP_RF_MODEL is not None
+    elif best_crop_model == "ANN":
+        crop_ready = crop_ready and torch is not None and CROP_ANN_MODEL_PATH.exists()
+    
     legacy_ann_ready = bool(
         SOIL_ANN_MODEL_PATH.exists()
         and SOIL_ANN_ENCODER is not None
@@ -293,18 +318,21 @@ def recommendation_audit() -> dict[str, Any]:
         warnings.append(
             f"Legacy ANN recorded accuracy is {SOIL_ANN_METRICS['final_accuracy']:.3f}, so its outputs should be treated as provisional."
         )
-    if crop_ready and CROP_COMPARISON.get("best_model"):
+    if crop_ready and CROP_PRO_METRICS.get("best_model"):
         warnings.append(
-            f"Crop recommendation artifacts detected. Preferred model: {CROP_COMPARISON['best_model']}."
+            f"Pro Crop recommendation artifacts detected. Preferred model: {CROP_PRO_METRICS['best_model']}."
         )
 
     return {
         "active_mode": active_mode,
         "crop_recommendation_ready": crop_ready,
         "legacy_ann_ready": legacy_ann_ready,
-        "crop_type_count": CROP_COMPARISON.get("crop_type_count"),
+        "crop_type_count": len(CROP_PRO_METRICS.get("crops", [])),
         "best_crop_model": best_crop_model,
-        "crop_models": CROP_COMPARISON.get("models", []),
+        "crop_models": [
+            {"Model": "RandomForest", "Accuracy": CROP_PRO_METRICS.get("rf_accuracy")},
+            {"Model": "ANN", "Accuracy": CROP_PRO_METRICS.get("ann_accuracy")}
+        ],
         "legacy_ann_metrics": SOIL_ANN_METRICS,
         "warnings": warnings,
         "runnable": crop_ready or legacy_ann_ready,
@@ -357,48 +385,44 @@ SOIL_AUDIT = soil_audit()
 RECOMMENDATION_AUDIT = recommendation_audit()
 
 
-def parse_crop_payload(payload: dict[str, Any]) -> pd.DataFrame:
+def parse_crop_payload(payload: dict[str, Any]) -> dict[str, Any]:
     try:
-        row = {
-            "Soil_Type": str(payload["soil_type"]),
-            "Irrigation_Available": int(payload["irrigation_available"]),
-            "Farm_Size_Acres": float(payload["farm_size_acres"]),
-            "Soil_pH": float(payload["soil_ph"]),
-            "Soil_Nitrogen": float(payload["soil_nitrogen"]),
-            "Soil_Organic_Matter": float(payload["soil_organic_matter"]),
-            "Temperature": float(payload["temperature"]),
-            "Rainfall": float(payload["rainfall"]),
-            "Humidity": float(payload["humidity"]),
+        data = {
+            "N": float(payload["soil_nitrogen"]),
+            "P": float(payload["soil_phosphorus"]),
+            "K": float(payload["soil_potassium"]),
+            "temperature": float(payload["temperature"]),
+            "humidity": float(payload["humidity"]),
+            "ph": float(payload["soil_ph"]),
+            "rainfall": float(payload["rainfall"]),
         }
     except (KeyError, ValueError) as exc:
         raise ValueError(f"Missing or invalid crop recommendation parameters: {exc}")
-    return pd.DataFrame([row])
+    return data
 
 
 def predict_crop_recommendation(payload: dict[str, Any]) -> dict[str, Any]:
     if not RECOMMENDATION_AUDIT["crop_recommendation_ready"]:
         raise RuntimeError("Crop recommendation models are not ready.")
 
-    features_df = parse_crop_payload(payload)
+    data_dict = parse_crop_payload(payload)
+    features_list = [[data_dict[f] for f in CROP_PRO_METRICS["features"]]]
     best_model = RECOMMENDATION_AUDIT["best_crop_model"]
 
     if best_model == "RandomForest":
-        transformed = CROP_TREE_PREPROCESSOR.transform(features_df)
-        probabilities = CROP_RF_MODEL.predict_proba(transformed)[0]
-        model_name = "RandomForest"
+        probabilities = CROP_RF_MODEL.predict_proba(features_list)[0]
+        model_name = "Random Forest (Pro)"
     elif best_model == "ANN":
-        transformed = CROP_ANN_PREPROCESSOR.transform(features_df)
-        if hasattr(transformed, "toarray"):
-            transformed = transformed.toarray()
+        transformed = CROP_SCALER.transform(features_list)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = CropANN(input_size=transformed.shape[1], num_classes=len(CROP_CLASSES)).to(device)
+        model = CropANN(input_size=7, num_classes=len(CROP_CLASSES)).to(device)
         model.load_state_dict(torch.load(CROP_ANN_MODEL_PATH, map_location=device))
         model.eval()
         input_tensor = torch.tensor(transformed, dtype=torch.float32).to(device)
         with torch.no_grad():
             outputs = model(input_tensor)
             probabilities = torch.softmax(outputs, dim=1)[0].cpu().numpy()
-        model_name = "ANN"
+        model_name = "ANN (Pro)"
     else:
         raise RuntimeError(f"Unsupported crop recommendation model: {best_model}")
 
@@ -418,8 +442,8 @@ def predict_crop_recommendation(payload: dict[str, Any]) -> dict[str, Any]:
         "top_probability": ranked[0]["probability"],
         "ranked_predictions": ranked,
         "warning": (
-            f"Current best crop model is {model_name}, but overall accuracy is low "
-            f"({CROP_COMPARISON['models'][0]['Test Accuracy']:.3f} test accuracy), so treat recommendations cautiously."
+            f"Current best crop model is {model_name}. Accuracy: "
+            f"{CROP_PRO_METRICS.get('rf_accuracy', 0):.3f} (RF) / {CROP_PRO_METRICS.get('ann_accuracy', 0):.3f} (ANN)."
         ),
     }
 
@@ -468,30 +492,55 @@ def predict_soil(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def predict_soil_tabular(payload: dict[str, Any]) -> dict[str, Any]:
+    # 1. Get Crop Recommendation (New Data)
+    crop_result = {}
     if RECOMMENDATION_AUDIT["crop_recommendation_ready"]:
-        return predict_crop_recommendation(payload)
+        crop_result = predict_crop_recommendation(payload)
 
-    if not SOIL_ANN_MODEL_PATH.exists() or not SOIL_ANN_ENCODER:
-        raise RuntimeError("Soil ANN model is not trained yet.")
+    # 2. Get Soil Identification (Old Data)
+    soil_label = "Unknown"
+    if SOIL_ANN_MODEL_PATH.exists() and SOIL_ANN_ENCODER:
+        try:
+            # Features: pH, Nitrogen, Organic_Matter, Temp, Rainfall, Humidity
+            data = [
+                float(payload["soil_ph"]),
+                float(payload["soil_nitrogen"]),
+                float(payload["soil_organic_matter"]),
+                float(payload["temperature"]),
+                float(payload["rainfall"]),
+                float(payload["humidity"]),
+            ]
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            num_classes = len(SOIL_ANN_CLASSES)
+            model = SoilANN(input_size=6, num_classes=num_classes).to(device)
+            model.load_state_dict(torch.load(SOIL_ANN_MODEL_PATH, map_location=device))
+            model.eval()
+            
+            scaled = SOIL_ANN_SCALER.transform([data])
+            input_tensor = torch.tensor(scaled, dtype=torch.float32).to(device)
+            with torch.no_grad():
+                outputs = model(input_tensor)
+                idx = int(outputs.argmax(dim=1)[0])
+                soil_label = SOIL_ANN_CLASSES[idx]
+        except Exception:
+            soil_label = "N/A (Pending Image Scan)"
 
-    # Features: pH, Nitrogen, Organic_Matter, Temp, Rainfall, Humidity
-    try:
-        data = [
-            float(payload["soil_ph"]),
-            float(payload["soil_nitrogen"]),
-            float(payload["soil_organic_matter"]),
-            float(payload["temperature"]),
-            float(payload["rainfall"]),
-            float(payload["humidity"]),
-        ]
-    except (KeyError, ValueError) as exc:
-        raise ValueError(f"Missing or invalid parameters: {exc}")
+    # 3. Generate Agent Action Plan
+    action_plan = FARM_AGENT.generate_action_plan(
+        features=payload,
+        crop_result=crop_result,
+        soil_result=soil_label
+    )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_classes = len(SOIL_ANN_CLASSES)
-    model = SoilANN(input_size=6, num_classes=num_classes).to(device)
-    model.load_state_dict(torch.load(SOIL_ANN_MODEL_PATH, map_location=device))
-    model.eval()
+    return {
+        "mode": "hybrid_recommendation",
+        "crop_label": crop_result.get("label", "N/A"),
+        "soil_label": soil_label,
+        "crop_confidence": crop_result.get("top_probability", 0),
+        "warning": crop_result.get("warning", ""),
+        "action_plan": action_plan,
+        "ranked_predictions": crop_result.get("ranked_predictions", [])
+    }
 
     # Scale
     input_scaled = SOIL_ANN_SCALER.transform([data])
@@ -532,13 +581,21 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[st
 
 class AppHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == "/api/status":
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path or "/"
+        if path != "/":
+            path = path.rstrip("/")
+        query = urllib.parse.parse_qs(parsed.query or "")
+
+        if path == "/api/status":
             json_response(
                 self,
                 HTTPStatus.OK,
                 {
                     "soil_audit": SOIL_AUDIT,
                     "recommendation_audit": RECOMMENDATION_AUDIT,
+                    "agent": FARM_AGENT.status(),
+                    "soil_analysis": {"plot_count": len(SOIL_ANALYSIS.list_plots())},
                     "server_urls": {
                         "local": "http://127.0.0.1:8000",
                         "browser_hint": "Use http://127.0.0.1:8000 or http://localhost:8000 in the browser, not http://0.0.0.0:8000.",
@@ -547,8 +604,41 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if self.path == "/" or self.path.startswith("/web/"):
-            relative = "index.html" if self.path == "/" else self.path.removeprefix("/web/")
+        if path == "/api/soil/analysis/list":
+            json_response(self, HTTPStatus.OK, {"plots": SOIL_ANALYSIS.list_plots()})
+            return
+
+        if path == "/api/soil/analysis/plot":
+            name = (query.get("name") or [None])[0]
+            if not name:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Missing query param: name"})
+                return
+            try:
+                png = SOIL_ANALYSIS.render_plot(str(name))
+            except KeyError:
+                json_response(self, HTTPStatus.NOT_FOUND, {"error": "Unknown plot name"})
+                return
+            except Exception as exc:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(png)))
+            self.end_headers()
+            self.wfile.write(png)
+            return
+
+        if path.startswith("/api/soil/analysis"):
+            json_response(
+                self,
+                HTTPStatus.NOT_FOUND,
+                {"error": "Unknown soil analysis endpoint", "path": path, "raw_path": self.path},
+            )
+            return
+
+        if path == "/" or path.startswith("/web/"):
+            relative = "index.html" if path == "/" else path.removeprefix("/web/")
             file_path = STATIC_DIR / relative
             if file_path.is_file():
                 content_type, _ = mimetypes.guess_type(file_path.name)
@@ -563,6 +653,11 @@ class AppHandler(BaseHTTPRequestHandler):
         json_response(self, HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path or "/"
+        if path != "/":
+            path = path.rstrip("/")
+
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(content_length) if content_length else b"{}"
@@ -572,11 +667,18 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            if self.path == "/api/soil/predict":
+            if path == "/api/soil/predict":
                 json_response(self, HTTPStatus.OK, predict_soil(payload))
                 return
-            if self.path == "/api/soil/predict-tabular":
+            if path == "/api/soil/predict-tabular":
                 json_response(self, HTTPStatus.OK, predict_soil_tabular(payload))
+                return
+            if path == "/api/crop/recommend":
+                json_response(self, HTTPStatus.OK, predict_crop_recommendation(payload))
+                return
+            if path == "/api/agent/chat":
+                reply = FARM_AGENT.chat(payload.get("message", ""))
+                json_response(self, HTTPStatus.OK, {"reply": reply})
                 return
             json_response(self, HTTPStatus.NOT_FOUND, {"error": "Not found"})
         except Exception as exc:
@@ -587,12 +689,12 @@ class AppHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    host = "0.0.0.0"
-    port = 8000
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
     server = ThreadingHTTPServer((host, port), AppHandler)
     print("Serving on:")
-    print("  http://127.0.0.1:8000")
-    print("  http://localhost:8000")
+    print(f"  http://127.0.0.1:{port}")
+    print(f"  http://localhost:{port}")
     server.serve_forever()
 
 

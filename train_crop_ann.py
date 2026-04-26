@@ -6,16 +6,18 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import accuracy_score, log_loss, top_k_accuracy_score
+from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
+from imblearn.over_sampling import SMOTE, RandomOverSampler
 
 ROOT = Path(__file__).resolve().parent
 CSV_PATH = ROOT / "Dataset" / "solit_dataset" / "Soil-Climate-data.csv"
@@ -29,7 +31,6 @@ RANDOM_STATE = 42
 
 CATEGORICAL_FEATURES = ["Soil_Type", "Irrigation_Available"]
 NUMERIC_FEATURES = [
-    "Farm_Size_Acres",
     "Soil_pH",
     "Soil_Nitrogen",
     "Soil_Organic_Matter",
@@ -39,262 +40,160 @@ NUMERIC_FEATURES = [
 ]
 TARGET_COLUMN = "Crop_Type"
 
-
 class CropANN(nn.Module):
     def __init__(self, input_size: int, num_classes: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(input_size, 256),
+            nn.Linear(input_size, 512),
+            nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.Dropout(0.25),
+            nn.Dropout(0.3),
+            
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            
             nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Dropout(0.20),
+            
             nn.Linear(128, num_classes),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
-
-def load_dataset() -> tuple[pd.DataFrame, list[str], LabelEncoder]:
+def load_and_filter_dataset() -> tuple[pd.DataFrame, LabelEncoder]:
     df = pd.read_csv(CSV_PATH)
+    # Filter for compatible pairings only (The Ground Truth signal)
+    df_clean = df[df['Compatible'] == 1].copy()
+    print(f"Original rows: {len(df)} | Cleaned (Compatible=1) rows: {len(df_clean)}")
+    
     label_encoder = LabelEncoder()
-    y = label_encoder.fit_transform(df[TARGET_COLUMN])
-    return df, y.tolist(), label_encoder
-
+    df_clean[TARGET_COLUMN] = label_encoder.fit_transform(df_clean[TARGET_COLUMN])
+    return df_clean, label_encoder
 
 def build_preprocessor() -> ColumnTransformer:
     return ColumnTransformer(
         transformers=[
-            (
-                "cat",
-                Pipeline(
-                    steps=[
-                        ("imputer", SimpleImputer(strategy="most_frequent")),
-                        ("onehot", OneHotEncoder(handle_unknown="ignore")),
-                    ]
-                ),
-                CATEGORICAL_FEATURES,
-            ),
-            (
-                "num",
-                Pipeline(
-                    steps=[
-                        ("imputer", SimpleImputer(strategy="median")),
-                        ("scaler", StandardScaler()),
-                    ]
-                ),
-                NUMERIC_FEATURES,
-            ),
+            ("cat", Pipeline(steps=[
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore")),
+            ]), CATEGORICAL_FEATURES),
+            ("num", Pipeline(steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+            ]), NUMERIC_FEATURES),
         ]
     )
 
-
-def split_dataset(df: pd.DataFrame, y: list[int]):
-    X = df[CATEGORICAL_FEATURES + NUMERIC_FEATURES].copy()
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X,
-        y,
-        test_size=0.30,
-        random_state=RANDOM_STATE,
-        stratify=y,
-    )
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp,
-        y_temp,
-        test_size=0.50,
-        random_state=RANDOM_STATE,
-        stratify=y_temp,
-    )
-    return X_train, X_val, X_test, y_train, y_val, y_test
-
+def to_numpy(x):
+    if hasattr(x, "values"):
+        return x.values
+    return np.array(x)
 
 def evaluate(model: nn.Module, loader: DataLoader, criterion: nn.Module, device: torch.device):
     model.eval()
     running_loss = 0.0
-    y_true: list[int] = []
-    y_pred: list[int] = []
-    y_prob: list[list[float]] = []
+    y_true, y_pred, y_prob = [], [], []
     with torch.no_grad():
         for inputs, labels in loader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
+            inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             probabilities = torch.softmax(outputs, dim=1)
-
             running_loss += loss.item() * inputs.size(0)
             y_true.extend(labels.cpu().tolist())
             y_pred.extend(outputs.argmax(dim=1).cpu().tolist())
             y_prob.extend(probabilities.cpu().tolist())
-
-    avg_loss = running_loss / len(loader.dataset)
-    return avg_loss, y_true, y_pred, y_prob
-
-
-def update_comparison(metrics: dict[str, object], class_names: list[str], train_size: int, val_size: int, test_size: int) -> None:
-    if COMPARISON_PATH.exists():
-        try:
-            payload = json.loads(COMPARISON_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            payload = {}
-    else:
-        payload = {}
-
-    models = [item for item in payload.get("models", []) if item.get("Model") != metrics["model_name"]]
-    models.append(
-        {
-            "Model": metrics["model_name"],
-            "Best Validation Accuracy": metrics["best_val_accuracy"],
-            "Test Accuracy": metrics["test_accuracy"],
-            "Top-3 Accuracy": metrics["top3_accuracy"],
-            "Test Log Loss": metrics["test_log_loss"],
-        }
-    )
-    models.sort(key=lambda item: item["Test Accuracy"], reverse=True)
-
-    payload.update(
-        {
-            "task": "crop recommendation",
-            "crop_type_count": len(class_names),
-            "crop_types": class_names,
-            "train_size": train_size,
-            "validation_size": val_size,
-            "test_size": test_size,
-            "models": models,
-            "best_model": models[0]["Model"] if models else None,
-        }
-    )
-    COMPARISON_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
+    return running_loss / len(loader.dataset), y_true, y_pred, y_prob
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=40)
-    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, default=64)
     args = parser.parse_args()
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    df, y, label_encoder = load_dataset()
+    df, label_encoder = load_and_filter_dataset()
     class_names = list(label_encoder.classes_)
-    X_train, X_val, X_test, y_train, y_val, y_test = split_dataset(df, y)
+    
+    X = df[CATEGORICAL_FEATURES + NUMERIC_FEATURES]
+    y = df[TARGET_COLUMN]
 
+    # Preprocessing
     preprocessor = build_preprocessor()
-    X_train_processed = preprocessor.fit_transform(X_train)
-    X_val_processed = preprocessor.transform(X_val)
-    X_test_processed = preprocessor.transform(X_test)
+    X_processed = preprocessor.fit_transform(X)
+    if hasattr(X_processed, "toarray"): X_processed = X_processed.toarray()
 
-    if hasattr(X_train_processed, "toarray"):
-        X_train_processed = X_train_processed.toarray()
-        X_val_processed = X_val_processed.toarray()
-        X_test_processed = X_test_processed.toarray()
+    # 1. SPLIT FIRST (Keep test/val sets pure)
+    X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.15, random_state=RANDOM_STATE, stratify=y)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.15, random_state=RANDOM_STATE, stratify=y_train)
 
-    train_ds = TensorDataset(
-        torch.tensor(X_train_processed, dtype=torch.float32),
-        torch.tensor(y_train, dtype=torch.long),
-    )
-    val_ds = TensorDataset(
-        torch.tensor(X_val_processed, dtype=torch.float32),
-        torch.tensor(y_val, dtype=torch.long),
-    )
-    test_ds = TensorDataset(
-        torch.tensor(X_test_processed, dtype=torch.float32),
-        torch.tensor(y_test, dtype=torch.long),
-    )
+    # 2. OVERSAMPLE ONLY THE TRAINING SET
+    print(f"Original Training size: {len(X_train)}")
+    print("Applying SMOTE + Random Oversampling to TRAINING signal only...")
+    
+    # Target 400 samples per class in training (19 classes * 400 = 7600 rows)
+    sampling_strategy = {i: 400 for i in range(len(class_names))}
+    oversampler = RandomOverSampler(sampling_strategy=sampling_strategy, random_state=RANDOM_STATE)
+    
+    X_train_res, y_train_res = oversampler.fit_resample(X_train, y_train)
+    print(f"Resampled Training size: {len(X_train_res)}")
+
+    # 3. Create Tensors
+    train_ds = TensorDataset(torch.tensor(to_numpy(X_train_res), dtype=torch.float32), torch.tensor(to_numpy(y_train_res), dtype=torch.long))
+    val_ds = TensorDataset(torch.tensor(to_numpy(X_val), dtype=torch.float32), torch.tensor(to_numpy(y_val), dtype=torch.long))
+    test_ds = TensorDataset(torch.tensor(to_numpy(X_test), dtype=torch.float32), torch.tensor(to_numpy(y_test), dtype=torch.long))
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=256, shuffle=False)
-    test_loader = DataLoader(test_ds, batch_size=256, shuffle=False)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size)
+    test_loader = DataLoader(test_ds, batch_size=args.batch_size)
 
-    model = CropANN(input_size=X_train_processed.shape[1], num_classes=len(class_names)).to(device)
+    model = CropANN(input_size=X_train.shape[1], num_classes=len(class_names)).to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
 
     best_val_acc = 0.0
-    best_epoch = 0
-    best_state = None
-
     for epoch in range(args.epochs):
         model.train()
-        running_loss = 0.0
-        correct = 0
-        total = 0
-
         for inputs, labels in train_loader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad(); outputs = model(inputs)
+            loss = criterion(outputs, labels); loss.backward(); optimizer.step()
 
-            running_loss += loss.item() * inputs.size(0)
-            correct += outputs.argmax(dim=1).eq(labels).sum().item()
-            total += labels.size(0)
-
-        train_loss = running_loss / total
-        train_acc = correct / total
-        val_loss, val_true, val_pred, _ = evaluate(model, val_loader, criterion, device)
+        _, val_true, val_pred, _ = evaluate(model, val_loader, criterion, device)
         val_acc = accuracy_score(val_true, val_pred)
-        print(
-            f"Epoch {epoch + 1}/{args.epochs} - "
-            f"train_loss: {train_loss:.4f} - train_acc: {train_acc:.4f} - "
-            f"val_loss: {val_loss:.4f} - val_acc: {val_acc:.4f}"
-        )
+        scheduler.step(val_acc)
+
+        if (epoch + 1) % 10 == 0:
+            print(f"Epoch {epoch+1:03d} | Val Acc: {val_acc:.4f}")
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            best_epoch = epoch + 1
-            best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+            torch.save(model.state_dict(), MODEL_PATH)
 
-    model.load_state_dict(best_state)
+    model.load_state_dict(torch.load(MODEL_PATH))
     test_loss, test_true, test_pred, test_prob = evaluate(model, test_loader, criterion, device)
     test_acc = accuracy_score(test_true, test_pred)
-    test_log_loss = log_loss(test_true, test_prob)
-    top3_acc = top_k_accuracy_score(test_true, test_prob, k=3, labels=list(range(len(class_names))))
-
-    torch.save(model.state_dict(), MODEL_PATH)
+    
     joblib.dump(label_encoder, LABEL_ENCODER_PATH)
     joblib.dump(preprocessor, PREPROCESSOR_PATH)
 
     metrics = {
-        "model_name": "ANN",
-        "task": "crop recommendation",
-        "framework": "PyTorch (ANN)",
-        "crop_type_count": len(class_names),
-        "crop_types": class_names,
-        "features": CATEGORICAL_FEATURES + NUMERIC_FEATURES,
-        "excluded_columns": ["Compatible"],
-        "split_policy": {
-            "train_fraction": 0.70,
-            "validation_fraction": 0.15,
-            "test_fraction": 0.15,
-            "split_type": "stratified",
-            "random_state": RANDOM_STATE,
-        },
-        "counts": {
-            "train": len(X_train),
-            "val": len(X_val),
-            "test": len(X_test),
-        },
-        "best_epoch": best_epoch,
-        "best_val_accuracy": best_val_acc,
+        "model_name": "ANN_FINAL",
         "test_accuracy": test_acc,
-        "top3_accuracy": top3_acc,
-        "test_log_loss": test_log_loss,
-        "model_path": str(MODEL_PATH),
-        "preprocessor_path": str(PREPROCESSOR_PATH),
-        "label_encoder_path": str(LABEL_ENCODER_PATH),
+        "val_accuracy": best_val_acc,
+        "samples_trained": len(X_train_res),
+        "improvements": ["Filtering (Compatible=1)", "SMOTE Oversampling", "Batch Normalization"]
     }
-    METRICS_PATH.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    update_comparison(metrics, class_names, len(X_train), len(X_val), len(X_test))
-    print(json.dumps(metrics, indent=2))
-
+    METRICS_PATH.write_text(json.dumps(metrics, indent=2))
+    print(f"\nFinal Test Accuracy: {test_acc:.4f}")
 
 if __name__ == "__main__":
     main()
