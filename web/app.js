@@ -173,8 +173,8 @@ async function handleTabularSubmit(event) {
 function renderANNResult(result) {
   if (result.mode === "hybrid_recommendation") {
     document.getElementById("ann-crop-type").textContent = result.crop_label.replace(/_/g, " ");
-    document.getElementById("ann-soil-type").textContent = result.soil_label.replace(/_/g, " ");
     // Hide confidence for tabular as requested
+    document.querySelector("#ann-result-card .confidence-section").classList.add("hidden");
     document.querySelector("#ann-result-card .confidence-section").classList.add("hidden");
     
     // Show Action Plan & Chat
@@ -320,6 +320,30 @@ function renderCNNResult(result) {
   document.getElementById("cnn-soil-type").textContent = label;
   document.getElementById("cnn-confidence-bar").style.width = `${probability}%`;
   document.getElementById("cnn-confidence-percent").textContent = `${probability}%`;
+
+  // Smart Lock: Update and disable the manual soil type selector
+  const manualSelector = document.getElementById("soil_type");
+  if (manualSelector) {
+    for (let i = 0; i < manualSelector.options.length; i++) {
+      if (manualSelector.options[i].text.toLowerCase().includes(label.toLowerCase())) {
+        manualSelector.selectedIndex = i;
+        break;
+      }
+    }
+    manualSelector.disabled = true;
+    
+    const parent = manualSelector.closest(".form-group");
+    if (parent && !document.getElementById("lock-hint")) {
+      const hint = document.createElement("span");
+      hint.id = "lock-hint";
+      hint.style.fontSize = "0.7rem";
+      hint.style.color = "var(--primary)";
+      hint.style.marginTop = "4px";
+      hint.style.display = "block";
+      hint.innerText = "✓ Locked to scanned result";
+      parent.appendChild(hint);
+    }
+  }
 
   const list = document.getElementById("cnn-ranked-list");
   list.innerHTML =
