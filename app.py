@@ -17,6 +17,7 @@ import pandas as pd
 from PIL import Image
 
 from agent import FarmAgent
+from analysis.image_analysis import ImageAnalysisService
 from analysis.soil_analysis import SoilAnalysisService
 
 # Global Agent Instance
@@ -29,6 +30,10 @@ MODELS_DIR = ROOT / "Models"
 FINAL_MODELS_DIR = MODELS_DIR / "final models"
 DATASET_DIR = ROOT / "Dataset"
 SOIL_ANALYSIS = SoilAnalysisService(DATASET_DIR / "solit_dataset" / "Soil-Climate-data.csv")
+IMAGE_ANALYSIS = ImageAnalysisService(
+    DATASET_DIR / "soil_image_datset", 
+    FINAL_MODELS_DIR / "soil_cnn_updated_model_metrics.json"
+)
 def first_existing_path(*paths: Path) -> Path:
     for path in paths:
         if path.exists():
@@ -497,32 +502,38 @@ def predict_soil_tabular(payload: dict[str, Any]) -> dict[str, Any]:
     if RECOMMENDATION_AUDIT["crop_recommendation_ready"]:
         crop_result = predict_crop_recommendation(payload)
 
-    # 2. Get Soil Identification (Old Data)
-    soil_label = "Unknown"
-    if SOIL_ANN_MODEL_PATH.exists() and SOIL_ANN_ENCODER:
-        try:
-            # Features: pH, Nitrogen, Organic_Matter, Temp, Rainfall, Humidity
-            data = [
-                float(payload["soil_ph"]),
-                float(payload["soil_nitrogen"]),
-                float(payload["soil_organic_matter"]),
-                float(payload["temperature"]),
-                float(payload["rainfall"]),
-                float(payload["humidity"]),
-            ]
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            num_classes = len(SOIL_ANN_CLASSES)
-            model = SoilANN(input_size=6, num_classes=num_classes).to(device)
-            model.load_state_dict(torch.load(SOIL_ANN_MODEL_PATH, map_location=device))
-            model.eval()
-            
-            scaled = SOIL_ANN_SCALER.transform([data])
-            input_tensor = torch.tensor(scaled, dtype=torch.float32).to(device)
-            with torch.no_grad():
-                outputs = model(input_tensor)
-                idx = int(outputs.argmax(dim=1)[0])
-                soil_label = SOIL_ANN_CLASSES[idx]
-        except Exception:
+    # 2. Get Soil Identification (Old Data or Direct Input)
+    soil_label = payload.get("soil_type", "").strip()
+    
+    # Fallback to ANN if the user didn't select or scan anything
+    if not soil_label or soil_label == "Manually select soil type":
+        soil_label = "Unknown"
+        if SOIL_ANN_MODEL_PATH.exists() and SOIL_ANN_ENCODER:
+            try:
+                # Features: pH, Nitrogen, Organic_Matter, Temp, Rainfall, Humidity
+                data = [
+                    float(payload["soil_ph"]),
+                    float(payload["soil_nitrogen"]),
+                    float(payload["soil_organic_matter"]),
+                    float(payload["temperature"]),
+                    float(payload["rainfall"]),
+                    float(payload["humidity"]),
+                ]
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                num_classes = len(SOIL_ANN_CLASSES)
+                model = SoilANN(input_size=6, num_classes=num_classes).to(device)
+                model.load_state_dict(torch.load(SOIL_ANN_MODEL_PATH, map_location=device))
+                model.eval()
+                
+                scaled = SOIL_ANN_SCALER.transform([data])
+                input_tensor = torch.tensor(scaled, dtype=torch.float32).to(device)
+                with torch.no_grad():
+                    outputs = model(input_tensor)
+                    idx = int(outputs.argmax(dim=1)[0])
+                    soil_label = SOIL_ANN_CLASSES[idx]
+            except Exception:
+                soil_label = "N/A (Pending Image Scan)"
+        else:
             soil_label = "N/A (Pending Image Scan)"
 
     # 3. Generate Agent Action Plan
@@ -604,6 +615,30 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/api/image-metrics/list":
+            json_response(self, HTTPStatus.OK, {"plots": IMAGE_ANALYSIS.list_plots()})
+            return
+
+        if path == "/api/image-metrics/plot":
+            name = (query.get("name") or [None])[0]
+            if not name:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Missing query param: name"})
+                return
+            try:
+                png = IMAGE_ANALYSIS.render_plot(str(name))
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png)))
+                self.end_headers()
+                self.wfile.write(png)
+                return
+            except KeyError:
+                json_response(self, HTTPStatus.NOT_FOUND, {"error": "Unknown plot name"})
+                return
+            except Exception as exc:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+
         if path == "/api/soil/analysis/list":
             json_response(self, HTTPStatus.OK, {"plots": SOIL_ANALYSIS.list_plots()})
             return
@@ -615,6 +650,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
             try:
                 png = SOIL_ANALYSIS.render_plot(str(name))
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png)))
+                self.end_headers()
+                self.wfile.write(png)
+                return
             except KeyError:
                 json_response(self, HTTPStatus.NOT_FOUND, {"error": "Unknown plot name"})
                 return
@@ -622,18 +663,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
 
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(png)))
-            self.end_headers()
-            self.wfile.write(png)
-            return
-
         if path.startswith("/api/soil/analysis"):
             json_response(
                 self,
                 HTTPStatus.NOT_FOUND,
-                {"error": "Unknown soil analysis endpoint", "path": path, "raw_path": self.path},
+                {"error": "Unknown soil analysis endpoint", "path": path},
             )
             return
 

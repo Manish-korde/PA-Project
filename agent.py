@@ -243,17 +243,21 @@ class FarmAgent:
 
     def _run_react(self, user_message: str, extra_context: Optional[str] = None) -> str:
         sys_prompt = (
-            "You are an expert Agronomist AI. You have access to the following tools:\n"
+            "You are an expert Agronomist AI having a conversation with a farmer.\n"
+            "You have access to the following tools:\n"
             "1. get_weather(location: str) -> Fetch a short daily weather forecast.\n"
             "2. get_fertilizer_price(name: str) -> Get approximate fertilizer price per kg (e.g., urea, dap).\n"
             "3. run_crop_model(N: float, P: float, K: float, ph: float, temperature: float, humidity: float, rainfall: float) -> Run local crop ML model.\n\n"
-            "To use a tool, you MUST output exactly this format:\n"
-            "ACTION: tool_name({\"arg1\": \"value1\"})\n"
-            "Wait for the system to provide the OBSERVATION. Do NOT output the observation yourself.\n"
-            "When you have the final answer, just write the answer directly (no ACTION needed).\n"
+            "IMPORTANT RULES:\n"
+            "- ONLY use tools if absolutely necessary to answer the user's specific question.\n"
+            "- If the user asks about the weather, ONLY use get_weather and answer about the weather.\n"
+            "- Do NOT re-evaluate the entire farm plan or use other tools unless explicitly requested.\n"
+            "- To use a tool, you MUST output exactly this format: ACTION: tool_name({\"arg1\": \"value1\"})\n"
+            "- Wait for the system to provide the OBSERVATION.\n"
+            "- When you have the final answer, just write the answer directly in plain text (no ACTION needed).\n"
         )
         if extra_context:
-            sys_prompt += "\nContext:\n" + extra_context.strip()
+            sys_prompt += "\nFarm Context:\n" + extra_context.strip()
 
         # Build a temporary history for the react loop
         loop_history = list(self.chat_history[-10:])
@@ -317,8 +321,19 @@ class FarmAgent:
     def chat(self, user_message: str) -> str:
         if not self._llm_available():
             return "Mock Mode: add `GROQ_API_KEY` in `.env` to enable the agent."
+            
+        # If this is the very first chat message, inject the context and the last generated plan
+        # so the agent has conversational continuity.
+        if len(self.chat_history) == 0:
+            self.chat_history.append({
+                "role": "system", 
+                "content": f"The current farm context is:\n{self.context}\n"
+                           "You have just generated an action plan for this farm. "
+                           "Now you are having a conversation with the farmer. Answer their questions directly."
+            })
+            
         try:
-            reply = self._run_react(user_message, extra_context=self.context)
+            reply = self._run_react(user_message, extra_context=None)  # Context is now in history
             self.chat_history.append({"role": "user", "content": user_message})
             self.chat_history.append({"role": "assistant", "content": reply})
             return reply
