@@ -1,0 +1,34 @@
+{
+  "architecture": "ResNet18 (Transfer Learning)",
+  "class_names": [
+    "Alluvial_Soil",
+    "Arid_Soil",
+    "Black_Soil",
+    "Laterite_Soil",
+    "Mountain_Soil",
+    "Red_Soil",
+    "Yellow_Soil"
+  ],
+  "split_policy": {
+    "source": "C:\\Users\\manis\\OneDrive\\Desktop\\PA-project\\Dataset\\soil_image_datset\\Soil-image-dataset\\Orignal-Dataset",
+    "train_fraction": 0.7,
+    "validation_fraction": 0.15,
+    "test_fraction": 0.15,
+    "split_type": "stratified",
+    "random_state": 42,
+    "augmentation": "train only"
+  },
+  "counts": {
+    "train": 8000,
+    "train_source_images": 832,
+    "val": 178,
+    "test": 179
+  },
+  "epochs": 15,
+  "best_epoch": 6,
+  "final_train_acc": 1.0,
+  "final_val_acc": 0.9382022471910112,
+  "best_val_acc": 0.949438202247191,
+  "test_acc": 0.9385474860335196,
+  "model_path": "C:\\Users\\manis\\OneDrive\\Desktop\\PA-project\\Models\\soil_resnet_updated_model.pth"
+}

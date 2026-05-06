@@ -286,11 +286,12 @@ function renderANNResult(result) {
         if(!msg) return;
         
         const history = document.getElementById("chat-history");
-        history.innerHTML += `<div style="margin-bottom: 8px;"><strong>You:</strong> ${msg}</div>`;
+        history.innerHTML += `<div class="chat-bubble user-bubble"><strong>You:</strong> ${msg}</div>`;
         input.value = "";
         
         const typingId = "typing-" + Date.now();
-        history.innerHTML += `<div id="${typingId}" style="margin-bottom: 8px; color: gray;"><em>Agent is typing...</em></div>`;
+        history.innerHTML += `<div id="${typingId}" class="typing-indicator"><em>AI is processing...</em></div>`;
+        history.scrollTop = history.scrollHeight;
         
         try {
           const res = await fetch("/api/agent/chat", {
@@ -300,19 +301,37 @@ function renderANNResult(result) {
           });
           const data = await res.json();
           document.getElementById(typingId).remove();
+          
           if(res.ok) {
-            let cleanReply = data.reply.trim();
-            if (cleanReply.startsWith("```")) {
-              cleanReply = cleanReply.replace(/^```(markdown|md)?\s*/i, "").replace(/\s*```$/i, "");
+            const reply = data.reply;
+            
+            // 1. Render Groq Response (General AI)
+            let groqText = typeof reply === 'object' ? reply.groq : reply;
+            if (groqText.startsWith("```")) {
+              groqText = groqText.replace(/^```(markdown|md)?\s*/i, "").replace(/\s*```$/i, "");
             }
-            history.innerHTML += `<div style="margin-bottom: 8px; color: var(--primary);"><strong>Agent:</strong> ${marked.parse(cleanReply)}</div>`;
+            history.innerHTML += `
+              <div class="chat-bubble groq-bubble">
+                <div class="bubble-header"><i class="fa-solid fa-robot"></i> Groq AI Assistant</div>
+                <div class="bubble-content">${marked.parse(groqText)}</div>
+              </div>`;
+
+            // 2. Render Local Response (SoilIntel Built LLM)
+            if (typeof reply === 'object' && reply.local) {
+              history.innerHTML += `
+                <div class="chat-bubble local-bubble">
+                  <div class="bubble-header"><i class="fa-solid fa-microchip"></i> SoilIntel Predictive Analysis</div>
+                  <div class="bubble-content">${marked.parse(reply.local)}</div>
+                </div>`;
+            }
           } else {
-            history.innerHTML += `<div style="margin-bottom: 8px; color: red;"><strong>Error:</strong> ${data.error}</div>`;
+            history.innerHTML += `<div class="chat-bubble error-bubble"><strong>Error:</strong> ${data.error}</div>`;
           }
         } catch(err) {
           document.getElementById(typingId).remove();
-          history.innerHTML += `<div style="margin-bottom: 8px; color: red;"><strong>Error:</strong> Network issue</div>`;
+          history.innerHTML += `<div class="chat-bubble error-bubble"><strong>Error:</strong> Network issue</div>`;
         }
+        history.scrollTop = history.scrollHeight;
       };
     }
   } else {

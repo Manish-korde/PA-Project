@@ -461,24 +461,114 @@ select:focus, input:focus {
   margin-bottom: 2rem;
 }
 
-/* Chat UI */
+/* Chat UI & Dual Response Bubbles */
 .chat-container {
-  background: rgba(0,0,0,0.2);
-  border-radius: 12px;
-  padding: 1rem;
-  border: 1px solid var(--surface-highest);
+  background: var(--surface-high);
+  border-radius: 16px;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.3);
 }
 
 .chat-history {
-  max-height: 250px;
+  max-height: 400px;
   overflow-y: auto;
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
-  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  padding-right: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  scroll-behavior: smooth;
 }
 
-.chat-history strong {
-  color: var(--primary);
+/* Base Bubble Style */
+.chat-bubble {
+  max-width: 85%;
+  padding: 1rem;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  position: relative;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* User Bubble */
+.user-bubble {
+  align-self: flex-end;
+  background: var(--surface-highest);
+  color: var(--text);
+  border-bottom-right-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Groq AI Bubble */
+.groq-bubble {
+  align-self: flex-start;
+  background: rgba(139, 214, 182, 0.05);
+  border: 1px solid rgba(139, 214, 182, 0.2);
+  border-bottom-left-radius: 2px;
+}
+
+/* SoilIntel Local Bubble */
+.local-bubble {
+  align-self: flex-start;
+  background: rgba(77, 224, 130, 0.08);
+  border: 1px solid var(--tertiary);
+  border-bottom-left-radius: 2px;
+  box-shadow: 0 4px 15px rgba(77, 224, 130, 0.1);
+}
+
+.bubble-header {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.groq-bubble .bubble-header { color: var(--primary); }
+.local-bubble .bubble-header { color: var(--tertiary); }
+
+.bubble-content {
+  color: var(--text);
+}
+
+.bubble-content p {
+  margin-bottom: 0.5rem;
+}
+
+.bubble-content p:last-child {
+  margin-bottom: 0;
+}
+
+.typing-indicator {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 0.5rem;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.error-bubble {
+  align-self: center;
+  background: rgba(255, 180, 171, 0.1);
+  border: 1px solid var(--error);
+  color: var(--error);
+  font-size: 0.85rem;
 }
 
 .chat-input-area {

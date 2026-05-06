@@ -10,6 +10,8 @@ from typing import Any, Callable, Dict, List, Optional
 import joblib
 from dotenv import load_dotenv
 
+from local_llm import LocalPredictiveEngine
+
 _ROOT = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=_ROOT / ".env", override=True)
 load_dotenv(override=True)
@@ -201,8 +203,11 @@ class FarmAgent:
     def __init__(self) -> None:
         self.chat_history: list[dict[str, str]] = []
         self.context: str = ""
+        self.last_features: dict = {}
         self._crop_tool = CropModelTool()
         self._api_key = GROQ_API_KEY
+        # Advanced local predictive engine for Unit‑4 NLP
+        self._local_engine = LocalPredictiveEngine()
 
     def _llm_available(self) -> bool:
         return bool(self._api_key)
@@ -296,6 +301,7 @@ class FarmAgent:
         return "Tool loop limit reached. Please try asking again."
 
     def generate_action_plan(self, features: dict, crop_result: dict, soil_result: str) -> str:
+        self.last_features = features  # Store for LSTM analysis
         self.context = (
             "Farm Context:\n"
             f"- Soil Type: {soil_result}\n"
@@ -307,23 +313,24 @@ class FarmAgent:
             return self._mock_action_plan(features, crop_result, soil_result)
 
         prompt = (
-            "Create a concise Farm Action Plan in Markdown.\n"
-            "Include: suitability reasoning (NPK+pH), risks, and 3 actionable steps.\n"
-            "Use tools if you need extra data (like weather or fertilizer price).\n"
-            "No fluff.\n\n"
-            + self.context
+            "Create a FINAL, complete Farm Action Plan in Markdown.\n"
+            "DO NOT ask for tool observations. Use the context provided below to generate a comprehensive plan.\n"
+            "Structure: ### 🚜 Farm Action Plan\n1. **Assessment**: Reasoning based on NPK/pH.\n2. **Risks**: Potential climate threats.\n3. **Steps**: 3 actionable agriculture tasks.\n\n"
+            "Context:\n" + self.context
         )
         try:
-            return self._run_react(prompt, extra_context=self.context)
+            # We call _call_groq directly for the plan to get a finished Markdown result
+            return self._call_groq(prompt, [{"role": "user", "content": "Generate my plan now."}])
         except Exception as exc:
             return f"**Agent Error:** {exc}\n\n" + self._mock_action_plan(features, crop_result, soil_result)
 
-    def chat(self, user_message: str) -> str:
+    def chat(self, user_message: str) -> dict[str, str]:
         if not self._llm_available():
-            return "Mock Mode: add `GROQ_API_KEY` in `.env` to enable the agent."
+            return {
+                "groq": "Mock Mode: add `GROQ_API_KEY` in `.env` to enable the agent.",
+                "local": self._local_predictive_analysis(user_message)
+            }
             
-        # If this is the very first chat message, inject the context and the last generated plan
-        # so the agent has conversational continuity.
         if len(self.chat_history) == 0:
             self.chat_history.append({
                 "role": "system", 
@@ -333,12 +340,29 @@ class FarmAgent:
             })
             
         try:
-            reply = self._run_react(user_message, extra_context=None)  # Context is now in history
+            # 1. Get Groq (General AI) Reply
+            groq_reply = self._run_react(user_message, extra_context=None)
             self.chat_history.append({"role": "user", "content": user_message})
-            self.chat_history.append({"role": "assistant", "content": reply})
-            return reply
+            self.chat_history.append({"role": "assistant", "content": groq_reply})
+
+            # 2. Get Local (Data-Driven) Reply using our Unit 4 NLP Parser
+            local_reply = self._local_predictive_analysis(user_message)
+
+            return {
+                "groq": groq_reply,
+                "local": local_reply
+            }
         except Exception as exc:
-            return f"Sorry—agent error: {exc}"
+            return {
+                "groq": f"Sorry—agent error: {exc}",
+                "local": "SoilIntel: Could not perform local analysis."
+            }
+
+    def _local_predictive_analysis(self, message: str) -> str:
+        """
+        Delegates to the advanced LocalPredictiveEngine for intent detection and response generation.
+        """
+        return self._local_engine.analyze(message, self.last_features)
 
     def _mock_action_plan(self, features: dict, crop_result: dict, soil_result: str) -> str:
         return (
