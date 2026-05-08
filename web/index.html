@@ -18,31 +18,35 @@
           <div class="logo-icon">🌱</div>
           <div class="logo-text">
             <h1>SoilIntel</h1>
-            <p>Advanced Hybrid Analysis</p>
+            <p data-i18n="header.subtitle">Advanced Hybrid Analysis</p>
           </div>
         </div>
         <div class="status-indicator" id="global-status">
           <span class="status-dot"></span>
-          <span id="status-text">Checking System...</span>
+          <span id="status-text" data-i18n="status.checking">Checking System...</span>
+        </div>
+        <div class="lang-toggle" id="lang-toggle" aria-label="Language toggle">
+          <button type="button" class="lang-btn active" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="mr">मराठी</button>
         </div>
       </header>
 
       <nav class="tab-navigation">
         <button class="tab-btn active" data-tab="classification">
           <i class="fa-solid fa-camera-retro"></i>
-          <span>Visual Scan</span>
+          <span data-i18n="tab.visual_scan">Visual Scan</span>
         </button>
         <button class="tab-btn" data-tab="recommendation">
           <i class="fa-solid fa-leaf"></i>
-          <span>Crop Advisor</span>
+          <span data-i18n="tab.crop_advisor">Crop Advisor</span>
         </button>
         <button class="tab-btn" data-tab="analysis">
           <i class="fa-solid fa-chart-line"></i>
-          <span>Soil Data</span>
+          <span data-i18n="tab.soil_data">Soil Data</span>
         </button>
         <button class="tab-btn" data-tab="model-insights">
           <i class="fa-solid fa-brain"></i>
-          <span>AI Insights</span>
+          <span data-i18n="tab.ai_insights">AI Insights</span>
         </button>
       </nav>
 
@@ -50,8 +54,8 @@
         <!-- Tab 1: Visual Identification -->
         <section id="classification" class="tab-panel active">
           <div class="panel-header">
-            <h2>Visual Identity</h2>
-            <p>Upload an image of your soil for high-precision CNN classification.</p>
+            <h2 data-i18n="classification.title">Visual Identity</h2>
+            <p data-i18n="classification.subtitle">Upload an image of your soil for high-precision CNN classification.</p>
           </div>
           <div class="visual-grid">
             <div class="card upload-card">
@@ -60,31 +64,31 @@
                   <input type="file" id="soil-image" accept="image/*" hidden>
                   <div class="upload-content">
                     <div class="upload-icon">📤</div>
-                    <p>Click or drag soil image here</p>
-                    <span class="file-hint">Supported: JPG, PNG, WEBP</span>
+                    <p data-i18n="upload.prompt">Click or drag soil image here</p>
+                    <span class="file-hint" data-i18n="upload.supported">Supported: JPG, PNG, WEBP</span>
                   </div>
                 </div>
                 <div id="image-preview-container" class="hidden">
                   <img id="image-preview" src="" alt="Preview">
-                  <button type="button" id="remove-image" class="remove-btn">✕ Remove</button>
+                  <button type="button" id="remove-image" class="remove-btn" data-i18n="upload.remove">✕ Remove</button>
                 </div>
                 <button type="submit" class="submit-btn primary-btn">
-                  <span>Analyze Soil Image</span>
+                  <span data-i18n="upload.submit">Analyze Soil Image</span>
                 </button>
               </form>
             </div>
 
             <div id="cnn-result-card" class="card result-card hidden">
               <div class="result-header">
-                <div class="status-badge">Analysis Complete</div>
+                <div class="status-badge" data-i18n="result.complete">Analysis Complete</div>
               </div>
               <div class="soil-display">
-                <span class="label-text">Identified Soil:</span>
+                <span class="label-text" data-i18n="result.identified_soil">Identified Soil:</span>
                 <h3 id="cnn-soil-type" class="emerald-glow">--</h3>
               </div>
               <div class="confidence-section">
                 <div class="confidence-header">
-                  <span>Confidence Level</span>
+                  <span data-i18n="result.confidence">Confidence Level</span>
                   <span id="cnn-confidence-percent">0%</span>
                 </div>
                 <div class="progress-bar">
@@ -92,29 +96,29 @@
                 </div>
               </div>
               <div id="cnn-ranked-list" class="rankings-list hidden"></div>
-              <button id="cnn-toggle-details" class="secondary-btn small-btn">View Full Rankings</button>
+              <button id="cnn-toggle-details" class="secondary-btn small-btn" data-i18n="result.view_rankings">View Full Rankings</button>
             </div>
 
             <!-- New: Soil Profile Card (Shown after classification) -->
             <div id="soil-profile-card" class="card hidden" style="margin-top: 1.5rem; text-align: left; background: var(--card-bg);">
               <div class="panel-header" style="border-bottom: 1px solid var(--border); padding: 1rem;">
-                <h3 style="margin: 0; color: var(--primary);">Soil Characteristics & Profile</h3>
+                <h3 style="margin: 0; color: var(--primary);" data-i18n="profile.title">Soil Characteristics & Profile</h3>
               </div>
               <div style="padding: 1rem;">
                 <p id="profile-desc" style="font-style: italic; color: var(--text-muted); margin-bottom: 1rem;"></p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                   <div class="info-item">
-                    <span class="info-label" style="display: block; font-size: 0.8rem; color: var(--primary); font-weight: bold;">Best Suited Crops</span>
+                    <span class="info-label" style="display: block; font-size: 0.8rem; color: var(--primary); font-weight: bold;" data-i18n="profile.best_crops">Best Suited Crops</span>
                     <span id="profile-crops" style="font-size: 0.95rem;"></span>
                   </div>
                   <div class="info-item">
-                    <span class="info-label" style="display: block; font-size: 0.8rem; color: var(--primary); font-weight: bold;">Ideal Climate</span>
+                    <span class="info-label" style="display: block; font-size: 0.8rem; color: var(--primary); font-weight: bold;" data-i18n="profile.ideal_climate">Ideal Climate</span>
                     <span id="profile-weather" style="font-size: 0.95rem;"></span>
                   </div>
                 </div>
                 <div style="margin-top: 1rem; padding: 0.8rem; background: rgba(59, 130, 246, 0.1); border-radius: 8px; font-size: 0.85rem;">
                   <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--primary);"></i> 
-                  <strong>Automation:</strong> Regional NPK baselines for this soil have been pre-filled in the <strong>Soil Analysis</strong> tab for you.
+                  <strong data-i18n="profile.automation">Automation:</strong> <span data-i18n="profile.automation_note">Regional NPK baselines for this soil have been pre-filled in the <strong>Soil Analysis</strong> tab for you.</span>
                 </div>
               </div>
             </div>
@@ -273,9 +277,10 @@
                 </div>
 
                 <div id="chat-section" class="chat-container" style="display: none; margin-top: 1.5rem;">
+                  <div id="tts-note" class="tts-note" aria-live="polite"></div>
                   <div id="chat-history" class="chat-history"></div>
                   <form id="chat-form" class="chat-input-area">
-                    <input type="text" id="chat-input" placeholder="Ask a follow-up question..." required>
+                    <input type="text" id="chat-input" placeholder="Ask a follow-up question..." data-i18n-placeholder="chat.placeholder" required>
                     <button type="submit" class="chat-submit-btn"><i class="fa-solid fa-paper-plane"></i></button>
                   </form>
                 </div>

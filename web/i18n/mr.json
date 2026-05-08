@@ -1,0 +1,36 @@
+{
+  "header.subtitle": "प्रगत संमिश्र विश्लेषण",
+  "status.checking": "सिस्टम तपासत आहे...",
+  "tab.visual_scan": "दृश्य स्कॅन",
+  "tab.crop_advisor": "पीक सल्लागार",
+  "tab.soil_data": "माती डेटा",
+  "tab.ai_insights": "एआय माहिती",
+
+  "classification.title": "दृश्य ओळख",
+  "classification.subtitle": "उच्च-अचूकता CNN वर्गीकरणासाठी मातीचा फोटो अपलोड करा.",
+  "upload.prompt": "इथे मातीचा फोटो क्लिक करा किंवा ड्रॅग करा",
+  "upload.supported": "समर्थित: JPG, PNG, WEBP",
+  "upload.remove": "✖ काढा",
+  "upload.submit": "मातीचा फोटो विश्लेषित करा",
+  "result.complete": "विश्लेषण पूर्ण",
+  "result.identified_soil": "ओळखलेली माती:",
+  "result.confidence": "विश्वास पातळी",
+  "result.view_rankings": "पूर्ण क्रमवारी पहा",
+
+  "profile.title": "माती वैशिष्ट्ये व प्रोफाइल",
+  "profile.best_crops": "योग्य पिके",
+  "profile.ideal_climate": "आदर्श हवामान",
+  "profile.automation": "स्वयंचलन:",
+  "profile.automation_note": "या मातीसाठी प्रादेशिक NPK बेसलाइन तुमच्यासाठी “Soil Analysis” टॅबमध्ये पूर्व-भरल्या आहेत.",
+
+  "chat.placeholder": "पुढील प्रश्न विचारा...",
+  "chat.you": "आपण:",
+  "chat.assistant": "सहायक:",
+  "chat.audio_unsupported": "या ब्राउझरमध्ये ऑडिओ समर्थित नाही."
+  ,
+  "analysis.loading": "ग्राफ लोड होत आहेत…",
+  "analysis.none": "ग्राफ उपलब्ध नाहीत.",
+  "analysis.error": "ग्राफ लोड करताना त्रुटी: "
+  ,
+  "chat.processing": "एआय प्रक्रिया करत आहे..."
+}

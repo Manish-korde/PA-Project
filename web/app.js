@@ -12,6 +12,83 @@ const formatJSON = (obj) => JSON.stringify(obj, null, 2);
 let soilAnalysisLoaded = false;
 let imageAnalysisLoaded = false;
 
+// --- i18n (English default + Marathi toggle) ---
+const I18N = (() => {
+  const DEFAULT_LANG = "en";
+  const STORAGE_KEY = "soilintel.lang";
+  let lang = localStorage.getItem(STORAGE_KEY) || DEFAULT_LANG;
+  let mr = null;
+
+  async function ensureMrLoaded() {
+    if (mr) return;
+    const res = await fetch("/web/i18n/mr.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error("Failed to load Marathi translations");
+    mr = await res.json();
+  }
+
+  function t(key, fallback) {
+    if (lang !== "mr") return fallback;
+    if (mr && typeof mr[key] === "string") return mr[key];
+    return fallback;
+  }
+
+  async function setLang(nextLang) {
+    lang = nextLang === "mr" ? "mr" : "en";
+    localStorage.setItem(STORAGE_KEY, lang);
+    if (lang === "mr") {
+      try { await ensureMrLoaded(); } catch (_) { /* fallback to English */ }
+    }
+    applyTranslations();
+    updateLangToggleUI();
+  }
+
+  function getLang() {
+    return lang;
+  }
+
+  function updateLangToggleUI() {
+    const root = document.getElementById("lang-toggle");
+    if (!root) return;
+    root.querySelectorAll(".lang-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.lang === lang);
+    });
+  }
+
+  function applyTranslations() {
+    // text nodes
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const key = el.getAttribute("data-i18n");
+      const fallback = el.getAttribute("data-i18n-fallback") || el.textContent || "";
+      el.textContent = t(key, fallback);
+    });
+
+    // placeholders
+    document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+      const key = el.getAttribute("data-i18n-placeholder");
+      const fallback = el.getAttribute("data-i18n-placeholder-fallback") || el.getAttribute("placeholder") || "";
+      el.setAttribute("placeholder", t(key, fallback));
+    });
+  }
+
+  async function init() {
+    if (lang === "mr") {
+      try { await ensureMrLoaded(); } catch (_) { lang = "en"; }
+    }
+    applyTranslations();
+    updateLangToggleUI();
+    const toggle = document.getElementById("lang-toggle");
+    if (toggle) {
+      toggle.addEventListener("click", (e) => {
+        const btn = e.target.closest(".lang-btn");
+        if (!btn) return;
+        setLang(btn.dataset.lang);
+      });
+    }
+  }
+
+  return { init, t, setLang, getLang, applyTranslations };
+})();
+
 const CROP_ICONS = {
   "rice": "fa-solid fa-wheat-awn",
   "maize": "fa-solid fa-seedling",
@@ -123,7 +200,7 @@ async function loadSoilAnalysis() {
   const grid = document.getElementById("analysis-plot-grid");
   if (!status || !grid) return;
 
-  status.textContent = "Loading graphs…";
+  status.textContent = I18N.t("analysis.loading", "Loading graphs…");
   grid.innerHTML = "";
 
   try {
@@ -133,7 +210,7 @@ async function loadSoilAnalysis() {
 
     const plots = data.plots || [];
     if (!plots.length) {
-      status.textContent = "No plots available.";
+      status.textContent = I18N.t("analysis.none", "No plots available.");
       soilAnalysisLoaded = true;
       return;
     }
@@ -164,7 +241,7 @@ async function loadSoilAnalysis() {
 
     soilAnalysisLoaded = true;
   } catch (err) {
-    status.textContent = `Error loading graphs: ${err.message || err}`;
+    status.textContent = I18N.t("analysis.error", `Error loading graphs: ${err.message || err}`);
   }
 }
 
@@ -293,11 +370,11 @@ function renderANNResult(result) {
         if(!msg) return;
         
         const history = document.getElementById("chat-history");
-        history.innerHTML += `<div class="chat-bubble user-bubble"><strong>You:</strong> ${msg}</div>`;
+        history.innerHTML += `<div class="chat-bubble user-bubble"><strong>${I18N.t("chat.you", "You:")}</strong> ${msg}</div>`;
         input.value = "";
         
         const typingId = "typing-" + Date.now();
-        history.innerHTML += `<div id="${typingId}" class="typing-indicator"><em>AI is processing...</em></div>`;
+        history.innerHTML += `<div id="${typingId}" class="typing-indicator"><em>${I18N.t("chat.processing", "AI is processing...")}</em></div>`;
         history.scrollTop = history.scrollHeight;
         
         try {
@@ -319,7 +396,10 @@ function renderANNResult(result) {
             }
             history.innerHTML += `
               <div class="chat-bubble groq-bubble">
-                <div class="bubble-header"><i class="fa-solid fa-robot"></i> Groq AI Assistant</div>
+                <div class="bubble-header">
+                  <span><i class="fa-solid fa-robot"></i> Groq AI Assistant</span>
+                  <button type="button" class="tts-btn" title="Listen"><i class="fa-solid fa-volume-high"></i></button>
+                </div>
                 <div class="bubble-content">${marked.parse(groqText)}</div>
               </div>`;
 
@@ -327,7 +407,10 @@ function renderANNResult(result) {
             if (typeof reply === 'object' && reply.local) {
               history.innerHTML += `
                 <div class="chat-bubble local-bubble">
-                  <div class="bubble-header"><i class="fa-solid fa-microchip"></i> SoilIntel Predictive Analysis</div>
+                  <div class="bubble-header">
+                    <span><i class="fa-solid fa-microchip"></i> SoilIntel Predictive Analysis</span>
+                    <button type="button" class="tts-btn" title="Listen"><i class="fa-solid fa-volume-high"></i></button>
+                  </div>
                   <div class="bubble-content">${marked.parse(reply.local)}</div>
                 </div>`;
             }
@@ -610,7 +693,80 @@ function openZoom(src, caption) {
   modal.classList.remove("hidden");
 }
 
+// --- Chatbot TTS (Text-to-Speech) ---
+function isTtsSupported() {
+  return typeof window !== "undefined" &&
+    "speechSynthesis" in window &&
+    typeof window.SpeechSynthesisUtterance === "function";
+}
+
+function splitForSpeech(text) {
+  const cleaned = (text || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
+  // Prefer shorter chunks for stability.
+  return cleaned
+    .split(/(?<=[.?!।])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 30);
+}
+
+function pickVoice(preferMarathi) {
+  const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+  if (!voices.length) return null;
+
+  if (preferMarathi) {
+    const mr = voices.find((v) => (v.lang || "").toLowerCase().startsWith("mr"));
+    if (mr) return mr;
+  }
+
+  const indian = voices.find((v) => (v.lang || "").toLowerCase().endsWith("-in"));
+  return indian || voices[0] || null;
+}
+
+async function speak(text) {
+  const note = document.getElementById("tts-note");
+  if (!isTtsSupported()) {
+    if (note) note.textContent = I18N.t("chat.audio_unsupported", "Audio not supported in this browser.");
+    return;
+  }
+
+  if (note) note.textContent = "";
+
+  const parts = splitForSpeech(text);
+  if (!parts.length) return;
+
+  window.speechSynthesis.cancel();
+
+  // Voices can be lazy-loaded by the browser.
+  const preferMarathi = I18N.getLang && I18N.getLang() === "mr";
+  const ensureVoices = () => new Promise((resolve) => {
+    const existing = window.speechSynthesis.getVoices();
+    if (existing && existing.length) return resolve(existing);
+    window.speechSynthesis.onvoiceschanged = () => resolve(window.speechSynthesis.getVoices());
+    setTimeout(() => resolve(window.speechSynthesis.getVoices()), 500);
+  });
+
+  await ensureVoices();
+  const voice = pickVoice(preferMarathi);
+
+  for (const part of parts) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => {
+      const utter = new SpeechSynthesisUtterance(part);
+      if (voice) utter.voice = voice;
+      utter.rate = 1;
+      utter.pitch = 1;
+      utter.onend = () => resolve();
+      utter.onerror = () => resolve();
+      window.speechSynthesis.speak(utter);
+    });
+  }
+}
+
 function init() {
+  // i18n must be ready before we set up UI strings/placeholders.
+  // (async init runs in DOMContentLoaded below)
   initTabs();
   initImageUpload();
   initModals();
@@ -627,6 +783,19 @@ function init() {
 
   document.getElementById("tabular-form").addEventListener("submit", handleTabularSubmit);
   document.getElementById("soil-form").addEventListener("submit", handleImageSubmit);
+
+  // Chat TTS delegation
+  const history = document.getElementById("chat-history");
+  if (history) {
+    history.addEventListener("click", (e) => {
+      const btn = e.target.closest(".tts-btn");
+      if (!btn) return;
+      const bubble = btn.closest(".chat-bubble");
+      const content = bubble ? bubble.querySelector(".bubble-content") : null;
+      const text = content ? content.innerText : "";
+      speak(text);
+    });
+  }
 }
 
 async function loadImageAnalysis() {
@@ -708,7 +877,8 @@ async function loadAugmentationGallery() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  await I18N.init();
   init();
   document.getElementById("refresh-gallery")?.addEventListener("click", loadAugmentationGallery);
 });
