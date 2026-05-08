@@ -302,20 +302,33 @@ class FarmAgent:
 
     def generate_action_plan(self, features: dict, crop_result: dict, soil_result: str) -> str:
         self.last_features = features  # Store for LSTM analysis
+        
+        # Include soil profile if available in features
+        profile_str = ""
+        if "profile" in features:
+            p = features["profile"]
+            profile_str = f" - Soil Description: {p.get('description')}\n - Best Crops for this Soil: {p.get('best_crops')}"
+
         self.context = (
-            "Farm Context:\n"
-            f"- Soil Type: {soil_result}\n"
-            f"- Recommended Crop (backend): {crop_result.get('label', 'Unknown')} (Confidence: {crop_result.get('top_probability', 0) * 100:.1f}%)\n"
-            f"- Parameters: pH={features.get('soil_ph')}, N={features.get('soil_nitrogen')}, P={features.get('soil_phosphorus')}, K={features.get('soil_potassium')}\n"
-            f"- Climate: Temp={features.get('temperature')}C, Rainfall={features.get('rainfall')}mm, Humidity={features.get('humidity')}%\n"
+            "CRITICAL FARM CONTEXT (STRICT ADHERENCE REQUIRED):\n"
+            f"- Identified Soil Type: {soil_result}\n{profile_str}\n"
+            f"- BACKEND PREDICTED CROP: {crop_result.get('label', 'Unknown')} (Confidence: {crop_result.get('top_probability', 0) * 100:.1f}%)\n"
+            f"- Chemical Parameters: pH={features.get('soil_ph')}, N={features.get('soil_nitrogen')}, P={features.get('soil_phosphorus')}, K={features.get('soil_potassium')}\n"
+            f"- Environmental Data: Temp={features.get('temperature')}C, Rainfall={features.get('rainfall')}mm, Humidity={features.get('humidity')}%\n"
         )
         if not self._llm_available():
             return self._mock_action_plan(features, crop_result, soil_result)
 
         prompt = (
-            "Create a FINAL, complete Farm Action Plan in Markdown.\n"
-            "DO NOT ask for tool observations. Use the context provided below to generate a comprehensive plan.\n"
-            "Structure: ### 🚜 Farm Action Plan\n1. **Assessment**: Reasoning based on NPK/pH.\n2. **Risks**: Potential climate threats.\n3. **Steps**: 3 actionable agriculture tasks.\n\n"
+            "You are a professional Agronomist AI. Your task is to create a Farm Action Plan based ONLY on the provided context.\n\n"
+            "STRICT RULES:\n"
+            f"1. You MUST support the BACKEND PREDICTED CROP ({crop_result.get('label', 'Unknown')}). Do NOT suggest a different crop.\n"
+            "2. Explain WHY the chemical parameters (N,P,K,pH) make this crop a good fit.\n"
+            "3. Format your response in clean Markdown with headers.\n\n"
+            "Structure:\n### 🚜 Agronomist Action Plan\n"
+            "**1. Soil & Crop Assessment**: Justify the predicted crop based on the NPK and pH values.\n"
+            "**2. Environmental Risk Analysis**: Analyze how the temperature and rainfall will affect this specific crop.\n"
+            "**3. Fertilizer & Management Steps**: Provide 3 specific, actionable steps for the farmer.\n\n"
             "Context:\n" + self.context
         )
         try:

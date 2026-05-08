@@ -107,6 +107,10 @@ CROP_ANN_MODEL_PATH = FINAL_MODELS_DIR / "crop_ann_model.pth"
 CROP_RF_MODEL_PATH = FINAL_MODELS_DIR / "crop_rf_model.pkl"
 CROP_LABEL_ENCODER_PATH = FINAL_MODELS_DIR / "crop_label_encoder.pkl"
 CROP_SCALER_PATH = FINAL_MODELS_DIR / "crop_scaler.pkl"
+CROP_TREE_PREPROCESSOR_PATH = FINAL_MODELS_DIR / "crop_tree_preprocessor.pkl"
+CROP_ANN_PREPROCESSOR_PATH = FINAL_MODELS_DIR / "crop_ann_preprocessor.pkl"
+CROP_COMPARISON_PATH = FINAL_MODELS_DIR / "crop_model_comparison.json"
+
 
 SOIL_DATASET_PATH = DATASET_DIR / "soil_image_datset"
 TARGET_SOIL_CLASSES = [

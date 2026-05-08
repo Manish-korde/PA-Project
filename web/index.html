@@ -94,6 +94,48 @@
               <div id="cnn-ranked-list" class="rankings-list hidden"></div>
               <button id="cnn-toggle-details" class="secondary-btn small-btn">View Full Rankings</button>
             </div>
+
+            <!-- New: Soil Profile Card (Shown after classification) -->
+            <div id="soil-profile-card" class="card hidden" style="margin-top: 1.5rem; text-align: left; background: var(--card-bg);">
+              <div class="panel-header" style="border-bottom: 1px solid var(--border); padding: 1rem;">
+                <h3 style="margin: 0; color: var(--primary);">Soil Characteristics & Profile</h3>
+              </div>
+              <div style="padding: 1rem;">
+                <p id="profile-desc" style="font-style: italic; color: var(--text-muted); margin-bottom: 1rem;"></p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div class="info-item">
+                    <span class="info-label" style="display: block; font-size: 0.8rem; color: var(--primary); font-weight: bold;">Best Suited Crops</span>
+                    <span id="profile-crops" style="font-size: 0.95rem;"></span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label" style="display: block; font-size: 0.8rem; color: var(--primary); font-weight: bold;">Ideal Climate</span>
+                    <span id="profile-weather" style="font-size: 0.95rem;"></span>
+                  </div>
+                </div>
+                <div style="margin-top: 1rem; padding: 0.8rem; background: rgba(59, 130, 246, 0.1); border-radius: 8px; font-size: 0.85rem;">
+                  <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--primary);"></i> 
+                  <strong>Automation:</strong> Regional NPK baselines for this soil have been pre-filled in the <strong>Soil Analysis</strong> tab for you.
+                </div>
+              </div>
+            </div>
+
+            <!-- Agronomist Visual Decision Support -->
+            <div id="gan-trace-card" class="card result-card hidden" style="margin-top: 1rem; border-top: 2px solid var(--secondary);">
+              <div class="result-header">
+                <div class="status-badge" style="background: var(--secondary);"><i class="fa-solid fa-magnifying-glass-plus"></i> Visual Decision Support</div>
+              </div>
+              <div class="panel-header" style="padding: 1rem 0; text-align: left;">
+                <h4 style="color: var(--primary); margin: 0;">Micro-Texture Enhancement Trace</h4>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.2rem 0;">Enhances soil micro-textures, cracks, and mineral hues for human expert verification.</p>
+              </div>
+              <div id="gan-augmentation-grid" class="augmentation-grid">
+                <!-- Filled by JS -->
+              </div>
+              <div class="panel-note" style="margin-top: 1rem; text-align: left; background: rgba(52, 211, 153, 0.05);">
+                <i class="fa-solid fa-circle-info"></i> <strong>Agronomist Verification:</strong> Since field photos are often taken with low-quality smartphone cameras, this enhancement pipeline dynamically recovers high-frequency textural details, helping remote agronomists visually verify the AI's classification.
+              </div>
+            </div>
+
           </div>
         </section>
 
@@ -266,6 +308,24 @@
             <p>Deep dive into the CNN model's training performance and dataset characteristics.</p>
           </div>
           <div id="image-analysis-status" class="status-message"></div>
+          
+          <!-- Live Augmentation Gallery -->
+          <div class="card" style="margin-bottom: 2rem;">
+            <div class="panel-header" style="text-align: left; padding: 1rem;">
+              <h3 style="margin: 0; color: var(--primary);">Live Data Augmentation Trace</h3>
+              <p style="font-size: 0.85rem; color: var(--text-muted);">Demonstrating the <strong>In-Memory</strong> transformations used to expand the dataset from 832 to 8,000 samples during training.</p>
+            </div>
+            <div id="augmentation-gallery" class="augmentation-grid" style="padding: 1rem; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+              <!-- Filled by JS -->
+            </div>
+            <div style="padding: 1rem; text-align: left; background: rgba(59, 130, 246, 0.05); font-size: 0.85rem; color: var(--text-muted); border-radius: 8px; margin: 1rem;">
+              <i class="fa-solid fa-microchip"></i> <strong>Training Logic:</strong> During each epoch, the PyTorch DataLoader applies random rotations, noise, and color jittering to original images. These "virtual samples" are consumed by the CNN and never stored on disk, ensuring maximum variety without wasting storage.
+            </div>
+            <div style="padding: 1rem; text-align: center;">
+              <button id="refresh-gallery" class="secondary-btn small-btn">Simulate Random Augmentation</button>
+            </div>
+          </div>
+
           <div id="image-plot-grid" class="plot-grid"></div>
         </section>
 
@@ -288,6 +348,15 @@
         <p>&copy; 2026 SoilIntel Hybrid Analysis Platform</p>
         <div class="debug-toggle" id="debug-toggle">System Audit Log</div>
       </footer>
+
+      <!-- Image Zoom Modal -->
+      <div id="image-modal" class="modal hidden">
+        <div class="modal-content image-zoom-content">
+          <button class="close-btn zoom-close">&times;</button>
+          <img id="zoomed-image" src="" alt="Enlarged Plot">
+          <div id="zoom-caption" class="zoom-caption"></div>
+        </div>
+      </div>
 
       <!-- Debug Modal -->
       <div id="debug-modal" class="modal hidden">
