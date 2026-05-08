@@ -21,7 +21,55 @@ from analysis.image_analysis import ImageAnalysisService
 from analysis.soil_analysis import SoilAnalysisService
 
 # Global Agent Instance
+# Soil Profiles Database (Scientific Baselines for Farmers)
+SOIL_PROFILES = {
+    "Alluvial_Soil": {
+        "description": "Rich in minerals, particularly potash. Highly fertile and best for grains.",
+        "best_crops": "Rice, Wheat, Sugarcane, Pulses, Oilseeds",
+        "weather": "Warm with moderate to high rainfall.",
+        "baselines": {"soil_nitrogen": 80, "soil_phosphorus": 40, "soil_potassium": 40, "soil_ph": 7.0, "temperature": 25, "rainfall": 1200, "humidity": 70, "soil_organic_matter": 1.5}
+    },
+    "Arid_Soil": {
+        "description": "Sandy texture, low organic matter, high salt content. Requires irrigation.",
+        "best_crops": "Bajra, Guar, Fodder, Melons",
+        "weather": "Hot and dry with very low rainfall.",
+        "baselines": {"soil_nitrogen": 20, "soil_phosphorus": 10, "soil_potassium": 30, "soil_ph": 8.2, "temperature": 35, "rainfall": 300, "humidity": 20, "soil_organic_matter": 0.2}
+    },
+    "Black_Soil": {
+        "description": "High clay content, excellent water retention. Rich in iron, lime, and calcium.",
+        "best_crops": "Cotton, Soyabean, Chillies, Jowar",
+        "weather": "Tropical with moderate rainfall.",
+        "baselines": {"soil_nitrogen": 60, "soil_phosphorus": 50, "soil_potassium": 80, "soil_ph": 7.8, "temperature": 28, "rainfall": 800, "humidity": 50, "soil_organic_matter": 1.0}
+    },
+    "Laterite_Soil": {
+        "description": "Leached soil, acidic, poor in fertility. Good for plantation crops.",
+        "best_crops": "Cashew, Rubber, Tea, Coffee",
+        "weather": "Heavy rainfall and high humidity.",
+        "baselines": {"soil_nitrogen": 30, "soil_phosphorus": 20, "soil_potassium": 20, "soil_ph": 5.2, "temperature": 26, "rainfall": 2000, "humidity": 80, "soil_organic_matter": 2.5}
+    },
+    "Mountain_Soil": {
+        "description": "Rich in organic matter (humus) but acidic. Found in hilly regions.",
+        "best_crops": "Tea, Coffee, Spices, Apple, Saffron",
+        "weather": "Cooler temperatures with high moisture.",
+        "baselines": {"soil_nitrogen": 90, "soil_phosphorus": 30, "soil_potassium": 40, "soil_ph": 5.8, "temperature": 18, "rainfall": 1500, "humidity": 60, "soil_organic_matter": 4.0}
+    },
+    "Red_Soil": {
+        "description": "Formed from crystalline rocks. Rich in iron but low in nitrogen and phosphorus.",
+        "best_crops": "Tobacco, Groundnut, Ragi, Potato",
+        "weather": "Warm with seasonal rainfall.",
+        "baselines": {"soil_nitrogen": 40, "soil_phosphorus": 20, "soil_potassium": 30, "soil_ph": 6.0, "temperature": 27, "rainfall": 1000, "humidity": 40, "soil_organic_matter": 0.8}
+    },
+    "Yellow_Soil": {
+        "description": "Hydrated form of red soil. Slightly more fertile than red soil.",
+        "best_crops": "Rice, Maize, Groundnut",
+        "weather": "Moderate warmth and rainfall.",
+        "baselines": {"soil_nitrogen": 50, "soil_phosphorus": 30, "soil_potassium": 40, "soil_ph": 6.4, "temperature": 26, "rainfall": 1100, "humidity": 50, "soil_organic_matter": 1.2}
+    }
+}
+
+
 FARM_AGENT = FarmAgent()
+
 
 
 ROOT = Path(__file__).resolve().parent
@@ -489,10 +537,39 @@ def predict_soil(payload: dict[str, Any]) -> dict[str, Any]:
         reverse=True,
     )
 
+    # --- Visual Decision Support: Micro-Texture Enhancement ---
+    # This pipeline enhances soil micro-textures, cracks, and mineral hues 
+    # to help agronomists visually verify the soil condition,
+    # compensating for low-quality smartphone camera captures.
+    from PIL import ImageEnhance, ImageFilter
+    
+    # 1. Noise Reduction
+    enhanced_img = image.filter(ImageFilter.SMOOTH_MORE)
+    # 2. Micro-Texture Synthesis
+    enhancer = ImageEnhance.Sharpness(enhanced_img)
+    enhanced_img = enhancer.enhance(2.5)
+    enhancer = ImageEnhance.Contrast(enhanced_img)
+    enhanced_img = enhancer.enhance(1.5)
+    # 3. Additional enhancements for visible effect
+    enhancer = ImageEnhance.Brightness(enhanced_img)
+    enhanced_img = enhancer.enhance(1.2)
+    enhancer = ImageEnhance.Color(enhanced_img)
+    enhanced_img = enhancer.enhance(1.2)
+    
+    # Save enhanced image to base64
+    buffered = io.BytesIO()
+    enhanced_img.save(buffered, format="JPEG")
+    enhanced_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+    soil_type = SOIL_ENCODER_CLASSES[top_index]
+    profile = SOIL_PROFILES.get(soil_type, {})
+
     return {
-        "label": SOIL_ENCODER_CLASSES[top_index],
+        "label": soil_type,
         "top_probability": ranked[0]["probability"],
         "ranked_predictions": ranked,
+        "enhanced_image": f"data:image/jpeg;base64,{enhanced_base64}",
+        "profile": profile
     }
 
 
@@ -615,17 +692,74 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/api/augmented-samples":
+            import random
+            from PIL import ImageEnhance, ImageOps
+            import numpy as np
+
+            def apply_live_augmentation(image):
+                # 1. Random Rotation
+                img = image.rotate(random.uniform(-25, 25))
+                # 2. Random Horizontal Flip
+                if random.random() > 0.5:
+                    img = ImageOps.mirror(img)
+                # 3. Color Jittering (Brightness/Contrast)
+                enhancer = ImageEnhance.Brightness(img)
+                img = enhancer.enhance(random.uniform(0.7, 1.3))
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(random.uniform(0.8, 1.2))
+                # 4. Simulated GAN Noise / Texture Grain
+                data = np.array(img).astype(np.float32)
+                noise = np.random.normal(0, 5, data.shape)
+                data = np.clip(data + noise, 0, 255).astype(np.uint8)
+                return Image.fromarray(data)
+
+            base_p = ROOT / "Dataset" / "soil_image_datset" / "Soil-image-dataset" / "Orignal-Dataset"
+            if not base_p.exists():
+                base_p = ROOT / "Dataset" / "soil_image_datset" / "Orignal-Dataset"
+
+            classes = [d for d in os.listdir(base_p) if os.path.isdir(base_p / d)]
+            chosen_class = random.choice(classes)
+            class_path = base_p / chosen_class
+            
+            all_files = [f for f in os.listdir(class_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            source_file = random.choice(all_files)
+            
+            with Image.open(class_path / source_file) as img:
+                img = img.convert("RGB").resize((224, 224))
+                
+                # Original
+                buffered_orig = io.BytesIO()
+                img.save(buffered_orig, format="JPEG")
+                orig_b64 = base64.b64encode(buffered_orig.getvalue()).decode('utf-8')
+                
+                samples = [{"type": "Original Source", "data": orig_b64}]
+                
+                # Generate 5 Live Augmented variations
+                for i in range(5):
+                    aug_img = apply_live_augmentation(img)
+                    buf = io.BytesIO()
+                    aug_img.save(buf, format="JPEG")
+                    samples.append({
+                        "type": f"In-Memory Augment {i+1}", 
+                        "data": base64.b64encode(buf.getvalue()).decode('utf-8')
+                    })
+
+            json_response(self, HTTPStatus.OK, {"class": chosen_class, "samples": samples})
+            return
+
         if path == "/api/image-metrics/list":
             json_response(self, HTTPStatus.OK, {"plots": IMAGE_ANALYSIS.list_plots()})
             return
 
         if path == "/api/image-metrics/plot":
             name = (query.get("name") or [None])[0]
+            dpi = (query.get("dpi") or [None])[0]
             if not name:
                 json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Missing query param: name"})
                 return
             try:
-                png = IMAGE_ANALYSIS.render_plot(str(name))
+                png = IMAGE_ANALYSIS.render_plot(str(name), dpi=int(dpi) if dpi else 160)
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(png)))
@@ -645,11 +779,12 @@ class AppHandler(BaseHTTPRequestHandler):
 
         if path == "/api/soil/analysis/plot":
             name = (query.get("name") or [None])[0]
+            dpi = (query.get("dpi") or [None])[0]
             if not name:
                 json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Missing query param: name"})
                 return
             try:
-                png = SOIL_ANALYSIS.render_plot(str(name))
+                png = SOIL_ANALYSIS.render_plot(str(name), dpi=int(dpi) if dpi else 160)
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(png)))

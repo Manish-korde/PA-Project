@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import numpy as np
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,11 +14,11 @@ class PlotSpec:
     name: str
     title: str
     description: str
-    build: Callable[[Any], bytes]
+    build: Callable[[Any, int], bytes]
 
-def _png_bytes(fig) -> bytes:
+def _png_bytes(fig, dpi: int) -> bytes:
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=160)
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=dpi)
     import matplotlib.pyplot as plt
     plt.close(fig)
     return buf.getvalue()
@@ -35,7 +36,7 @@ def _maybe_import_seaborn():
     except Exception:
         return None
 
-def _build_image_distribution(dataset_path: Path) -> bytes:
+def _build_image_distribution(dataset_path: Path, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     
     # We look for the dataset structure
@@ -46,7 +47,7 @@ def _build_image_distribution(dataset_path: Path) -> bytes:
     if not search_path.exists():
         fig = plt.figure(figsize=(8, 4))
         plt.text(0.5, 0.5, f"Dataset not found at {search_path}", ha='center')
-        return _png_bytes(fig)
+        return _png_bytes(fig, dpi)
 
     folders = [f for f in os.listdir(search_path) if os.path.isdir(search_path / f)]
     counts = [len(os.listdir(search_path / f)) for f in folders]
@@ -67,9 +68,9 @@ def _build_image_distribution(dataset_path: Path) -> bytes:
                 f'{int(height)}', ha='center', va='bottom', fontsize=10)
     
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
-def _build_training_summary(metrics: dict) -> bytes:
+def _build_training_summary(metrics: dict, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     
     fig = plt.figure(figsize=(10, 6))
@@ -86,7 +87,7 @@ def _build_training_summary(metrics: dict) -> bytes:
     plot_data = [(l, v) for l, v in zip(labels, values) if v > 0]
     if not plot_data:
         plt.text(0.5, 0.5, "No accuracy data available in metrics", ha='center')
-        return _png_bytes(fig)
+        return _png_bytes(fig, dpi)
     
     p_labels, p_values = zip(*plot_data)
     
@@ -105,16 +106,16 @@ def _build_training_summary(metrics: dict) -> bytes:
     plt.figtext(0.15, 0.8, info_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.5))
     
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
-def _build_data_split(metrics: dict) -> bytes:
+def _build_data_split(metrics: dict, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     
     counts = metrics.get('counts', {})
     if not counts:
         fig = plt.figure(figsize=(8, 4))
         plt.text(0.5, 0.5, "No split data available", ha='center')
-        return _png_bytes(fig)
+        return _png_bytes(fig, dpi)
         
     labels = ['Train', 'Validation', 'Test']
     sizes = [counts.get('train', 0), counts.get('val', 0), counts.get('test', 0)]
@@ -134,7 +135,7 @@ def _build_data_split(metrics: dict) -> bytes:
     ax.legend(legend_labels, loc="lower center", bbox_to_anchor=(0.5, -0.1), ncol=3)
     
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 class ImageAnalysisService:
     def __init__(self, dataset_path: Path, metrics_path: Path) -> None:
@@ -142,7 +143,7 @@ class ImageAnalysisService:
         self._metrics_path = metrics_path
         self._lock = threading.Lock()
         self._metrics: Optional[dict] = None
-        self._plot_cache: dict[str, bytes] = {}
+        self._plot_cache: dict[tuple[str, int], bytes] = {}
         
         self._plots = [
             PlotSpec(
@@ -162,6 +163,12 @@ class ImageAnalysisService:
                 "Data Split Overview", 
                 "Shows how the data was partitioned into training, validation, and test sets.",
                 _build_data_split
+            ),
+            PlotSpec(
+                "augmentation_balancing",
+                "Data Augmentation Impact",
+                "Compares the original imbalanced dataset distribution against the expanded, balanced training set used by the CNN.",
+                _build_augmentation_balancing
             )
         ]
 
@@ -176,19 +183,53 @@ class ImageAnalysisService:
     def list_plots(self) -> list[dict[str, str]]:
         return [{"name": p.name, "title": p.title, "description": p.description} for p in self._plots]
 
-    def render_plot(self, name: str) -> bytes:
+    def render_plot(self, name: str, dpi: int = 160) -> bytes:
+        dpi = max(80, min(int(dpi), 400))
         with self._lock:
-            if name in self._plot_cache:
-                return self._plot_cache[name]
+            cache_key = (name, dpi)
+            if cache_key in self._plot_cache:
+                return self._plot_cache[cache_key]
             
             spec = next((p for p in self._plots if p.name == name), None)
             if not spec:
                 raise KeyError(name)
             
             if name == "image_distribution":
-                png = spec.build(self._dataset_path)
+                png = spec.build(self._dataset_path, dpi)
             else:
-                png = spec.build(self._load_metrics())
+                png = spec.build(self._load_metrics(), dpi)
                 
-            self._plot_cache[name] = png
+            self._plot_cache[cache_key] = png
             return png
+
+def _build_augmentation_balancing(metrics: dict, dpi: int) -> bytes:
+    plt = _safe_import_matplotlib()
+    
+    # Real data from your folders
+    source_counts = {'Alluvial': 52, 'Arid': 284, 'Black': 255, 'Laterite': 219, 'Mountain': 201, 'Red': 109, 'Yellow': 69}
+    classes = list(source_counts.keys())
+    orig_vals = list(source_counts.values())
+    
+    # Calculate Augmented targets (Total ~8000)
+    # We show a balanced target of ~1140 per class
+    target_val = 8000 // len(classes)
+    aug_vals = [target_val] * len(classes)
+    
+    x = np.arange(len(classes))
+    width = 0.35
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    rects1 = ax.bar(x - width/2, orig_vals, width, label='Original (Source)', color='#f87171')
+    rects2 = ax.bar(x + width/2, aug_vals, width, label='Augmented (Training)', color='#34d399')
+    
+    ax.set_ylabel('Image Count')
+    ax.set_title('Dataset Balancing via Stratified Augmentation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(classes, rotation=45)
+    ax.legend()
+    
+    ax.bar_label(rects1, padding=3, fontsize=9)
+    ax.bar_label(rects2, padding=3, fontsize=9)
+    
+    fig.tight_layout()
+    return _png_bytes(fig, dpi)

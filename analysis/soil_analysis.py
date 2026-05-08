@@ -14,7 +14,7 @@ import pandas as pd
 class PlotSpec:
     name: str
     title: str
-    build: Callable[[pd.DataFrame], bytes]
+    build: Callable[[pd.DataFrame, int], bytes]
 
 
 def _load_dataframe(csv_path: Path) -> pd.DataFrame:
@@ -22,9 +22,9 @@ def _load_dataframe(csv_path: Path) -> pd.DataFrame:
     return df
 
 
-def _png_bytes(fig) -> bytes:
+def _png_bytes(fig, dpi: int) -> bytes:
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=160)
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=dpi)
     fig.clf()
     return buf.getvalue()
 
@@ -47,7 +47,7 @@ def _maybe_import_seaborn():
         return None
 
 
-def _build_eda_distributions(df: pd.DataFrame) -> bytes:
+def _build_eda_distributions(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     sns = _maybe_import_seaborn()
 
@@ -84,10 +84,10 @@ def _build_eda_distributions(df: pd.DataFrame) -> bytes:
         ax4.set_title("Soil pH Distribution")
 
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_correlation_heatmap(df: pd.DataFrame) -> bytes:
+def _build_correlation_heatmap(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     sns = _maybe_import_seaborn()
     numeric = df.select_dtypes(include=["float64", "int64", "int32"]).copy()
@@ -107,10 +107,10 @@ def _build_correlation_heatmap(df: pd.DataFrame) -> bytes:
 
     ax.set_title("Feature Correlation Heatmap")
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_outlier_boxplot(df: pd.DataFrame) -> bytes:
+def _build_outlier_boxplot(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     sns = _maybe_import_seaborn()
 
@@ -125,10 +125,10 @@ def _build_outlier_boxplot(df: pd.DataFrame) -> bytes:
         ax.tick_params(axis="x", rotation=30)
     ax.set_title("Boxplot for Outlier Detection")
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_target_distribution(df: pd.DataFrame) -> bytes:
+def _build_target_distribution(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     sns = _maybe_import_seaborn()
     fig = plt.figure(figsize=(6, 4))
@@ -139,7 +139,7 @@ def _build_target_distribution(df: pd.DataFrame) -> bytes:
         df["Compatible"].value_counts().plot(kind="bar", ax=ax)
     ax.set_title("Target (Compatible) Distribution")
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
 def _prepare_ml(df: pd.DataFrame):
@@ -188,7 +188,7 @@ def _prepare_ml(df: pd.DataFrame):
     return preprocessor, X_train, X_test, y_train, y_test
 
 
-def _build_classification_accuracy(df: pd.DataFrame) -> bytes:
+def _build_classification_accuracy(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
 
     from sklearn.ensemble import RandomForestClassifier
@@ -224,10 +224,10 @@ def _build_classification_accuracy(df: pd.DataFrame) -> bytes:
     for i, (_, acc) in enumerate(rows):
         ax.text(i, acc + 0.02, f"{acc:.2f}", ha="center", va="bottom", fontsize=9)
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_confusion_matrices(df: pd.DataFrame) -> bytes:
+def _build_confusion_matrices(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     sns = _maybe_import_seaborn()
 
@@ -264,10 +264,10 @@ def _build_confusion_matrices(df: pd.DataFrame) -> bytes:
         ax.set_ylabel("Actual")
     fig.suptitle("Confusion Matrices (Binary Compatible)", y=1.02)
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_kmeans_elbow(df: pd.DataFrame) -> bytes:
+def _build_kmeans_elbow(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     from sklearn.cluster import KMeans
 
@@ -285,10 +285,10 @@ def _build_kmeans_elbow(df: pd.DataFrame) -> bytes:
     ax.set_xlabel("Number of Clusters")
     ax.set_ylabel("WCSS")
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_kmeans_scatter(df: pd.DataFrame) -> bytes:
+def _build_kmeans_scatter(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     sns = _maybe_import_seaborn()
     from sklearn.cluster import KMeans
@@ -309,10 +309,10 @@ def _build_kmeans_scatter(df: pd.DataFrame) -> bytes:
     ax.set_xlabel("Temperature")
     ax.set_ylabel("Rainfall")
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_hierarchical_dendrogram(df: pd.DataFrame) -> bytes:
+def _build_hierarchical_dendrogram(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     try:
         from scipy.cluster.hierarchy import dendrogram, linkage  # type: ignore
@@ -321,7 +321,7 @@ def _build_hierarchical_dendrogram(df: pd.DataFrame) -> bytes:
         ax = fig.add_subplot(1, 1, 1)
         ax.text(0.01, 0.5, "SciPy not installed; dendrogram unavailable.", transform=ax.transAxes)
         ax.set_axis_off()
-        return _png_bytes(fig)
+        return _png_bytes(fig, dpi)
 
     X_cluster = df.select_dtypes(include=["float64", "int64", "int32"]).sample(n=min(500, len(df)), random_state=42)
     linked = linkage(X_cluster, method="ward")
@@ -333,10 +333,10 @@ def _build_hierarchical_dendrogram(df: pd.DataFrame) -> bytes:
     ax.set_xlabel("Data Points")
     ax.set_ylabel("Distance")
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_hierarchical_scatter(df: pd.DataFrame) -> bytes:
+def _build_hierarchical_scatter(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
     sns = _maybe_import_seaborn()
     from sklearn.cluster import AgglomerativeClustering
@@ -357,10 +357,10 @@ def _build_hierarchical_scatter(df: pd.DataFrame) -> bytes:
     ax.set_xlabel("Temperature")
     ax.set_ylabel("Rainfall")
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
-def _build_ann_dnn_curves(df: pd.DataFrame) -> bytes:
+def _build_ann_dnn_curves(df: pd.DataFrame, dpi: int) -> bytes:
     plt = _safe_import_matplotlib()
 
     from sklearn.metrics import accuracy_score
@@ -419,7 +419,7 @@ def _build_ann_dnn_curves(df: pd.DataFrame) -> bytes:
         ax2.text(i, v + 0.02, f"{v:.2f}", ha="center", va="bottom", fontsize=9)
 
     fig.tight_layout()
-    return _png_bytes(fig)
+    return _png_bytes(fig, dpi)
 
 
 class SoilAnalysisService:
@@ -427,7 +427,7 @@ class SoilAnalysisService:
         self._dataset_path = dataset_path
         self._lock = threading.Lock()
         self._df: Optional[pd.DataFrame] = None
-        self._plot_cache: dict[str, bytes] = {}
+        self._plot_cache: dict[tuple[str, int], bytes] = {}
 
         self._plots: list[PlotSpec] = [
             PlotSpec("eda_distributions", "Distributions", _build_eda_distributions),
@@ -451,16 +451,18 @@ class SoilAnalysisService:
             self._df = _load_dataframe(self._dataset_path)
         return self._df
 
-    def render_plot(self, name: str) -> bytes:
+    def render_plot(self, name: str, dpi: int = 160) -> bytes:
+        dpi = max(80, min(int(dpi), 400))
         with self._lock:
-            if name in self._plot_cache:
-                return self._plot_cache[name]
+            cache_key = (name, dpi)
+            if cache_key in self._plot_cache:
+                return self._plot_cache[cache_key]
             df = self._ensure_loaded()
             spec = next((p for p in self._plots if p.name == name), None)
             if not spec:
                 raise KeyError(name)
-            png = spec.build(df)
-            self._plot_cache[name] = png
+            png = spec.build(df, dpi)
+            self._plot_cache[cache_key] = png
             return png
 
     def clear_cache(self) -> None:

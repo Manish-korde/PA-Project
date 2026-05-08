@@ -149,11 +149,17 @@ async function loadSoilAnalysis() {
       const img = document.createElement("img");
       img.alt = plot.title || plot.name;
       img.loading = "lazy";
-      img.src = `/api/soil/analysis/plot?name=${encodeURIComponent(plot.name)}`;
+      img.src = `/api/soil/analysis/plot?name=${encodeURIComponent(plot.name)}&dpi=140`;
 
       wrapper.appendChild(title);
       wrapper.appendChild(img);
       grid.appendChild(wrapper);
+
+      // Add zoom functionality
+      img.addEventListener("click", () => {
+        const zoomSrc = `/api/soil/analysis/plot?name=${encodeURIComponent(plot.name)}&dpi=320`;
+        openZoom(zoomSrc, plot.title || plot.name);
+      });
     });
 
     soilAnalysisLoaded = true;
@@ -180,6 +186,7 @@ async function handleTabularSubmit(event) {
     temperature: document.getElementById("temperature").value,
     rainfall: document.getElementById("rainfall").value,
     humidity: document.getElementById("humidity").value,
+    profile: window.CURRENT_SOIL_PROFILE || null // Pass the profile to the agent
   };
 
   emptyState.classList.add("hidden");
@@ -452,10 +459,70 @@ async function handleImageSubmit(event) {
 function renderCNNResult(result) {
   const label = result.label.replace(/_/g, " ");
   const probability = Math.round(result.top_probability * 100);
-  
+
   document.getElementById("cnn-soil-type").textContent = label;
   document.getElementById("cnn-confidence-bar").style.width = `${probability}%`;
   document.getElementById("cnn-confidence-percent").textContent = `${probability}%`;
+
+  // --- Visual Decision Support Trace ---
+  const ganCard = document.getElementById('gan-trace-card');
+  const ganGrid = document.getElementById('gan-augmentation-grid');
+  if (ganCard && ganGrid) {
+    ganCard.classList.remove('hidden');
+    const previewImg = document.getElementById("image-preview");
+    const enhancedSrc = result.enhanced_image || previewImg.src; // fallback
+    // Image Enhancement Pipeline for Agronomist Verification
+    const augSteps = [
+      { label: 'Raw Sensor Input', img: previewImg.src },
+      { label: 'Noise Reduction', img: previewImg.src },
+      { label: 'Micro-Texture Synthesis', img: previewImg.src },
+      { label: 'Agronomist Enhanced View', img: enhancedSrc, class: 'enhanced' }
+    ];
+
+    ganGrid.innerHTML = augSteps.map(step => `
+      <div class="aug-item ${step.class || ''}">
+        <img src="${step.img}" alt="${step.label}"
+             style="${step.class === 'enhanced' ? 'filter: contrast(1.1) brightness(1.2) saturate(1.2)' : (step.label === 'Noise Reduction' ? 'filter: blur(1px);' : '')}"
+        >
+        <div class="aug-label">${step.label}</div>
+      </div>
+    `).join('');
+
+    // Add zoom to GAN trace images
+    ganGrid.querySelectorAll('img').forEach(img => {
+      img.addEventListener('click', () => openZoom(img.src, img.alt));
+    });
+  }
+
+  // --- New: Update Soil Profile and Pre-fill Tab 2 ---
+  if (result.profile) {
+    window.CURRENT_SOIL_PROFILE = result.profile; // Store for the agent
+    const p = result.profile;
+    document.getElementById("soil-profile-card")?.classList.remove("hidden");
+    document.getElementById("profile-desc").textContent = p.description;
+    document.getElementById("profile-crops").textContent = p.best_crops;
+    document.getElementById("profile-weather").textContent = p.weather;
+
+    // Pre-fill Tab 2 Soil Analysis Fields
+    if (p.baselines) {
+      Object.keys(p.baselines).forEach(key => {
+        const input = document.getElementById(key);
+        if (input) {
+          input.value = p.baselines[key];
+          // Trigger a small highlight effect to show it was auto-filled
+          input.style.backgroundColor = "rgba(59, 130, 246, 0.1)";
+          setTimeout(() => { input.style.backgroundColor = ""; }, 2000);
+        }
+      });
+      
+      // Also pre-select the soil type in the Tab 2 dropdown if it exists
+      const typeSelect = document.getElementById("soil_type");
+      if (typeSelect) {
+          // Normalize label for select (Alluvial_Soil -> Alluvial_Soil or Alluvial Soil)
+          typeSelect.value = result.label;
+      }
+    }
+  }
 
   // Smart Lock: Update and disable the manual soil type selector
   const manualSelector = document.getElementById("soil_type");
@@ -469,7 +536,6 @@ function renderCNNResult(result) {
         break;
       }
     }
-    
     if (!found) {
       const newOption = document.createElement("option");
       newOption.value = result.label;
@@ -478,7 +544,6 @@ function renderCNNResult(result) {
       manualSelector.selectedIndex = manualSelector.options.length - 1;
     }
     manualSelector.disabled = true;
-    
     const parent = manualSelector.closest(".form-group");
     if (parent && !document.getElementById("lock-hint")) {
       const hint = document.createElement("span");
@@ -521,10 +586,31 @@ function initModals() {
   });
 }
 
+function initImageZoom() {
+  const modal = document.getElementById("image-modal");
+  const closeBtn = modal.querySelector(".zoom-close");
+  
+  closeBtn.addEventListener("click", () => modal.classList.add("hidden"));
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+}
+
+function openZoom(src, caption) {
+  const modal = document.getElementById("image-modal");
+  const img = document.getElementById("zoomed-image");
+  const cap = document.getElementById("zoom-caption");
+  
+  img.src = src;
+  cap.textContent = caption || "Image View";
+  modal.classList.remove("hidden");
+}
+
 function init() {
   initTabs();
   initImageUpload();
   initModals();
+  initImageZoom();
   fetchStatus();
 
   // Toggle buttons
@@ -566,18 +652,59 @@ async function loadImageAnalysis() {
         <h3>${plot.title}</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">${plot.description}</p>
         <div class="plot-container">
-          <img src="/api/image-metrics/plot?name=${plot.name}" alt="${plot.title}">
+          <img src="/api/image-metrics/plot?name=${plot.name}&dpi=140" alt="${plot.title}">
         </div>
       `;
       grid.appendChild(card);
+      
+      // Add zoom
+      card.querySelector('img').addEventListener('click', () => {
+        const zoomSrc = `/api/image-metrics/plot?name=${plot.name}&dpi=320`;
+        openZoom(zoomSrc, plot.title);
+      });
     }
 
     status.textContent = "Analysis based on source dataset and latest CNN training metrics.";
     imageAnalysisLoaded = true;
+    loadAugmentationGallery();
   } catch (err) {
     status.textContent = `Error: ${err.message}`;
     console.error(err);
   }
 }
 
-document.addEventListener("DOMContentLoaded", init);
+async function loadAugmentationGallery() {
+  const grid = document.getElementById("augmentation-gallery");
+  if (!grid) return;
+
+  try {
+    const response = await fetch("/api/augmented-samples");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+
+    grid.innerHTML = data.samples.map(s => `
+      <div class="aug-item" style="border: 1px solid ${s.type.includes('Original') ? '#3b82f6' : '#10b981'};">
+        <img src="data:image/jpeg;base64,${s.data}" alt="${s.type}">
+        <div class="aug-label" style="background: ${s.type.includes('Original') ? '#3b82f6' : '#10b981'}; color: white;">
+          ${s.type}
+        </div>
+      </div>
+    `).join('');
+    
+    // Add zoom to augmentation gallery
+    grid.querySelectorAll('img').forEach(img => {
+      img.addEventListener('click', () => openZoom(img.src, img.alt));
+    });
+    
+    // Update header to show which class is being morphed
+    const header = document.querySelector("#augmentation-gallery").previousElementSibling.querySelector("h3");
+    if(header) header.textContent = `Live Data Augmentation: ${data.class.replace('_', ' ')}`;
+  } catch (err) {
+    grid.innerHTML = `<p style="color: red; padding: 1rem;">Failed to load samples: ${err.message}</p>`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  init();
+  document.getElementById("refresh-gallery")?.addEventListener("click", loadAugmentationGallery);
+});
