@@ -588,7 +588,10 @@ function initModals() {
 
 function initImageZoom() {
   const modal = document.getElementById("image-modal");
+  if (!modal) return;
+
   const closeBtn = modal.querySelector(".zoom-close");
+  if (!closeBtn) return;
   
   closeBtn.addEventListener("click", () => modal.classList.add("hidden"));
   modal.addEventListener("click", (e) => {
@@ -600,6 +603,7 @@ function openZoom(src, caption) {
   const modal = document.getElementById("image-modal");
   const img = document.getElementById("zoomed-image");
   const cap = document.getElementById("zoom-caption");
+  if (!modal || !img || !cap) return;
   
   img.src = src;
   cap.textContent = caption || "Image View";
