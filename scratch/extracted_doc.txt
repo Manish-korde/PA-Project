@@ -1,0 +1,183 @@
+MIT Academy of Engineering
+(An Autonomous Institute Affiliated to Savitribai Phule Pune University)
+A Project Report on
+Hybrid Soil Analysis and Crop Recommendation
+Using Machine Learning and Deep Learning
+Submitted by
+Suryank Chavan   —   202301040200@mitaoe.ac.in
+Aditya Patil   —   202301040203@mitaoe.ac.in
+Swarup Daphal   —   202301040205@mitaoe.ac.in
+Manish Korde   —   202301040206@mitaoe.ac.in
+Vaishali Chatnalkar   —   202301040245@mitaoe.ac.in
+Guided by
+Prof. Shubhangi Kale
+School of Computer Engineering
+MIT Academy of Engineering, Alandi (D), Pune – 412105
+Academic Year 2024–2025
+Hybrid Soil Analysis and Crop Recommendation Using Machine Learning and Deep Learning
+Suryank Chavan¹, Aditya Patil¹, Swarup Daphal¹, Manish Korde¹, Vaishali Chatnalkar¹, Prof. Shubhangi Kale²
+¹Third Year B.Tech, School of Computer Engineering, MIT Academy of Engineering, Pune, India
+²Project Mentor, School of Computer Engineering, MIT Academy of Engineering, Pune, India
+Author Emails: 202301040200@mitaoe.ac.in, 202301040203@mitaoe.ac.in, 202301040205@mitaoe.ac.in, 202301040206@mitaoe.ac.in, 202301040245@mitaoe.ac.in
+Abstract
+Agriculture continues to be the foundation of many developing economies, and in India it supports more than half of the rural workforce while contributing close to 17–18% of national GDP. Yet farmers often choose crops without reliable knowledge of their soil chemistry, which leads to poor yields, wasted fertiliser, and avoidable financial loss. This project builds a hybrid recommendation system that brings together classical machine learning, modern deep learning, and image-based classification under one experimental framework. The system was developed on a structured dataset of 10,000 soil records covering pH, moisture, N–P–K values, temperature, rainfall, soil type and crop type, and a separate image dataset of 4,611 photographs across five soil categories.
+Seven supervised classifiers were trained and benchmarked side by side, together with three clustering methods, a family of ANN variants, and a regularised deep neural network with Batch Normalisation and Dropout. A CNN was trained in parallel on the soil image dataset for visual identification. Random Forest and the regularised DNN delivered the strongest tabular results, while the CNN performed well across all five soil classes. Beyond raw accuracy, the work emphasises a fair comparison: every model used the same split, the same scaler, and the same evaluation routine. The contribution of the project is therefore not a single best model but a transparent baseline that future field-level work can build on.
+Keywords
+Soil analysis; crop recommendation; machine learning; deep learning; Random Forest; XGBoost; ANN; DNN; CNN; clustering; precision agriculture; smart farming.
+1. Introduction
+1.1 Background
+Soil is rarely just dirt. It is a slow, living mixture of minerals, water, microbes and air, and the balance among its components decides whether a crop will thrive or fail. Farmers traditionally rely on memory, neighbourhood practice, and rough visual cues to choose what to plant, but this approach struggles when weather patterns shift or when soil chemistry quietly drifts over the years. A pH that drops by one unit, or a sustained dip in potassium, can quietly cut yields long before anyone notices the cause.
+Conventional laboratory testing answers these questions, but slowly and at a cost. Samples are sent away, results arrive after days or weeks, and the report still has to be translated into a planting decision. For smallholder farmers, that loop is rarely practical. The result is a wide information gap that compounds every season into lower productivity and higher input cost.
+Recent progress in machine learning and the availability of soil datasets have opened a quicker path. Once a model is trained on enough labelled records, recommendations can be produced in seconds and improved over time as more data flows in. The same idea extends to images: a phone photograph of a soil sample can be classified by a convolutional network, giving a useful first read on soil type even when chemical measurements are not available.
+This project is built around that opportunity. Rather than picking a single algorithm and tuning it in isolation, we treat the problem as a benchmarking exercise across paradigms. Classical classifiers, clustering algorithms, shallow neural networks, a regularised DNN, and a CNN are all trained on common splits and compared with the same metrics. The goal is a clear, reproducible view of which family of models is actually worth deploying for soil-based crop recommendation, and under what conditions each one fails.
+1.2 Motivation
+Three observations motivated this work. First, most published systems we reviewed rely on a single model and report its accuracy without a fair comparison against alternatives, which makes it hard to know whether the chosen model is actually the best fit. Second, soil is spatially uneven, and treating an entire region as one homogeneous block hides the natural sub-zones that may benefit from different recommendations. Third, soil image classification is rarely combined with tabular soil analysis, even though both forms of data are usually available in the field. Addressing these three issues in a single project gives both a practical tool and a benchmark others can extend.
+1.3 Problem Statement
+Given a set of soil and environmental measurements (and, where available, a photograph of the soil), the system must recommend whether a candidate crop is compatible with that soil, while remaining transparent about how that recommendation was reached. The work additionally compares classical and deep learning approaches under identical preprocessing and evaluation conditions so that any accuracy gap reflects the model itself rather than experimental setup.
+1.4 Objectives
+Carry out exploratory data analysis on the 10,000-record soil-crop dataset and document feature distributions, class balance and correlations.
+Train and compare seven supervised classifiers — Random Forest, Decision Tree, SVM, KNN, Naive Bayes, Logistic Regression and XGBoost — under identical conditions.
+Apply K-Means, DBSCAN and Agglomerative Clustering to identify natural soil-profile groupings.
+Design ANN configurations of varying depth and a regularised DNN with Batch Normalisation and Dropout, and compare them on the same task.
+Train a CNN on the 4,611-image soil dataset for five-class soil type identification.
+Produce a unified performance comparison and a deployable recommendation routine that accepts user soil parameters and returns ranked crop suggestions.
+2. Literature Survey
+The literature on machine learning for soil and crop recommendation has grown rapidly over the last five years. The works summarised below are representative rather than exhaustive; together they trace the move from single-model studies to ensemble and deep learning approaches, and the gradual addition of IoT and image data. Citations follow MLA style.
+2.1 Reviewed Works
+1. Motwani, Aditya, et al. "Soil Analysis and Crop Recommendation using Machine Learning." IEEE CONECCT, 2022. A CNN was paired with Random Forest to identify four soil types from photographs and then suggest crops, with the CNN reaching 95.21% accuracy. The paper is a useful demonstration that image input and tabular ML can be combined in a single advisory pipeline.
+2. Verma, R., et al. "Advanced Soil Fertility Analysis and Crop Recommendation using Machine Learning." IEEE ICSTSN, 2023. The authors compared ANN, Decision Tree, Random Forest and KNN on a fertility prediction task. Random Forest reached 98.63% on crop data and 92.61% on soil data, reinforcing the strength of ensembles for multi-class soil problems.
+3. Sharma, K., et al. "Crop and Nutrient Recommendation System using ML for Precision Agriculture." IEEE ICICT, 2023. SVM, Naive Bayes and Random Forest were integrated for joint crop and nutrient recommendation, achieving 95.8% accuracy and showing that nutrient deficiency hints can be derived alongside the main prediction.
+4. Mishra, D., et al. "A Crop Recommendation System Based on Nutrients and Environmental Factors Using ML and IoT." IEEE Sensors Letters, 2023. IoT nodes capturing live N, P, K, moisture and temperature were paired with a Random Forest classifier that reached 97.3% on field-collected data. The paper makes the case for closing the loop between sensing and inference.
+5. Singh, P., et al. "Crop Recommendation and Yield Prediction Using ML based Approaches." IEEE ICISGT, 2024. Bagging and boosting families were compared, with XGBoost reaching 96.8% on a combined soil and climate dataset. The result aligns with the broader trend favouring boosted trees for tabular agricultural data.
+6. Kumar, V., et al. "Machine Learning based Smart Crop Recommender and Yield Predictor." IEEE Access, 2023. A 22-crop recommender used seven classifiers; LightGBM led with an F1-score of 0.974. The work is notable for the breadth of crops and the careful F1 reporting.
+7. Rahman, S. A. Z., et al. "Soil Classification Using Machine Learning Methods and Crop Suggestion Based on Soil Series." IEEE ICCIT, 2022. SVM-based classification on soil-series labels achieved 94.5%, beating KNN and bagged trees on the same data and pointing to the importance of representation choice in soil tasks.
+8. Mehta, S., et al. "Precision Agriculture Using CNNs for Soil Type Identification." IEEE CVPRW, 2023. ResNet-50 transfer learning reached 93.8% on soil image classification, and the authors quantised the model for mobile deployment, addressing the gap between lab models and field tools.
+9. Pillai, S., et al. "K-Means Clustering for Agricultural Zone Identification and Precision Crop Planning." IEEE BigComp, 2022. K-Means and hierarchical clustering produced agricultural zones that improved downstream model accuracy by 8.3% relative to a single global model, motivating the clustering track used in this project.
+10. Bhat, A., et al. "IoT-Based Smart Farming with Real-Time Soil Parameter Monitoring." IEEE IoT Journal, 2021. An edge-computing architecture delivered end-to-end recommendation latency of around two seconds, showing that ML inference is no longer the bottleneck in IoT farming setups.
+11. Patel, H., et al. "Explainable AI for Agricultural Decision Support in Crop Recommendation." IEEE Transactions on Artificial Intelligence, 2024. SHAP-based explanations were applied to Random Forest and XGBoost; pH and N–P–K ratios were the most influential features. Explainability mattered for adoption, not just accuracy.
+12. Naik, J., et al. "Deep Neural Network for Crop Classification Using Hyperspectral Soil Data." IEEE Geoscience and Remote Sensing Letters, 2024. A seven-layer DNN trained on hyperspectral reflectance data reached 96.4%, comfortably above SVM and shallower networks. The paper supports the use of regularised DNNs over plain ANNs for this domain.
+2.2 Research Gap
+Two patterns emerge across these studies. Single-model designs dominate the literature, and where ensembles are used the comparisons are usually limited to two or three families. Clustering is rarely combined with classification, even though the cited zone-based studies show measurable gains. Image-based soil identification has matured separately from tabular ML and is seldom integrated into a unified recommendation pipeline. Regularised deep networks (with Batch Normalisation and Dropout) have not been benchmarked carefully against ensemble methods on the same soil-crop dataset, leaving a real question of which paradigm is actually best for this problem. The objectives listed in Section 1.4 are designed to close these gaps within a single reproducible study.
+2.3 Research Objectives Derived from the Survey
+Provide a like-for-like comparison of classical, ensemble, shallow and deep neural models on identical soil-crop data.
+Investigate whether clustering-based zone awareness offers additional predictive value over a single global model.
+Assess whether image-based soil identification can serve as an independent or complementary input alongside tabular features.
+Make every step — preprocessing, training, evaluation — reproducible from a single Jupyter notebook with fixed seeds.
+3. Proposed Methodology
+The system is organised as two parallel tracks that meet at a final recommendation layer. Track 1 handles the tabular soil-crop data through classification, clustering and neural models. Track 2 handles the soil image dataset through a CNN. Both tracks are evaluated with consistent metrics, and the results are joined into a single recommendation step that ranks crops by predicted compatibility and reports the visual soil class where image input is available.
+3.1 System Architecture
+The block diagram below summarises the full pipeline. The left branch shows the tabular flow from raw records through preprocessing into the four model families, and the right branch shows the parallel image pipeline that feeds the CNN. Both branches converge at the recommendation engine.
+Figure 3.1: System Architecture — dual-track design for tabular and image-based soil analysis
+3.2 Block-Level Explanation
+Input layer. The system accepts two kinds of input. The first is a CSV file of soil and environmental records with eleven features and a binary compatibility label. The second is a directory of soil photographs grouped by class. The two inputs are processed independently and combined only at the final step.
+Preprocessing. Tabular categorical fields — soil type, crop type and irrigation availability — are converted to integer codes with a label encoder. All numeric features are scaled with a standard scaler so that distance-based and gradient-based models train on a common range. The dataset is split 80/20 with stratification so that the test partition keeps the same class ratio as the training partition. For the image branch, every photograph is rescaled to a [0,1] pixel range and resized to 150×150 RGB; light data augmentation is used to reduce overfitting on the smaller image set.
+Classifier block. Seven supervised classifiers are trained with the same training partition: Random Forest with 100 trees, XGBoost with default settings, a single Decision Tree, K-Nearest Neighbours with k=5, Gaussian Naive Bayes, Logistic Regression, and SVM with an RBF kernel. Each model uses scikit-learn's unified fit/predict interface so the comparison stays clean.
+Clustering block. K-Means is run for k=2 through k=9 with the elbow method used to confirm the natural number of clusters. DBSCAN is applied with default density parameters to look for non-convex groupings. Agglomerative clustering with Ward linkage is run alongside, and a dendrogram is generated for interpretation.
+Neural network block. A family of ANN configurations is built in Keras, ranging from a single 64-unit hidden layer up to three layers of 128 units. The DNN extends this with Batch Normalisation and a 0.3 dropout rate at each hidden layer, ReLU activations, and a learning-rate schedule that decays during training. Both networks use Adam as the optimiser. Early stopping monitors the validation loss to avoid overfitting.
+CNN block. The image classifier is a small sequential CNN: two Conv2D layers (32 and 64 filters) each followed by max pooling, then a flatten layer, a 128-unit dense layer, and a softmax output over five classes. Training runs for 15 epochs with Adam and categorical cross-entropy.
+Evaluation and recommendation. Each model is scored on accuracy, macro precision, macro recall and F1. Clustering quality is assessed with the silhouette score and the Davies-Bouldin index. The recommendation engine takes the best-performing tabular model, attaches a probability output, and ranks crops by predicted compatibility, while the CNN supplies the visual soil class where an image is provided.
+4. Experimentation and Discussion
+4.1 Dataset Description
+Two datasets were used. The first is a tabular soil-crop compatibility dataset of 10,000 records. Each record contains eleven input features and a binary label that flags whether the chosen crop is compatible with the recorded soil. A null-value check on every column returned zero missing entries, so no imputation step was required.
+Feature | Type | Description
+Crop_Type | Categorical | Type of crop (Rice, Wheat, Maize, …)
+Soil_Type | Categorical | Soil category (Clay, Sandy, Loamy, …)
+Farm_Size_Acres | Numeric | Farm area in acres
+Irrigation_Available | Binary | Whether irrigation is available
+Soil_pH | Numeric | Acidity / alkalinity (0–14)
+Soil_Moisture | Numeric | Moisture content (%)
+N (Nitrogen) | Numeric | Nitrogen ratio (kg/ha)
+P (Phosphorus) | Numeric | Phosphorus ratio (kg/ha)
+K (Potassium) | Numeric | Potassium ratio (kg/ha)
+Temperature | Numeric | Ambient temperature (°C)
+Rainfall | Numeric | Annual rainfall (mm)
+Compatible (Target) | Binary | Soil-crop compatibility label
+Table 4.1: Feature description for the tabular soil-crop dataset
+The second dataset is a soil image collection of 4,611 photographs distributed across five soil categories: Yellow, Black, Laterite, Alluvial and Red. The split provided 3,691 training images and 920 validation images. Each photograph was rescaled to [0,1] and stored in class-named subdirectories so that ImageDataGenerator could read them with a single call.
+4.2 Implementation Setup
+The full workflow was implemented in Python 3 in Google Colab. Pandas and NumPy handled data loading; scikit-learn 1.4 provided the classifiers, clustering routines and metrics; XGBoost 2.0 was used for gradient boosting; TensorFlow / Keras handled the ANN, DNN and CNN; and Matplotlib together with Seaborn produced every visualisation. Random seeds were fixed where each library allows it so that reruns yield comparable numbers.
+4.3 Results — Classification Track
+All seven classifiers were trained on the same 80/20 split with the same scaler. Results are summarised below.
+Algorithm | Accuracy (%) | Precision (%) | Recall (%) | F1
+Random Forest | 98.63 | 98.12 | 98.45 | 0.984
+XGBoost | 97.80 | 97.41 | 97.60 | 0.977
+SVM (RBF) | 96.10 | 95.78 | 95.94 | 0.960
+Decision Tree | 94.20 | 93.87 | 94.05 | 0.941
+KNN (k=5) | 93.40 | 93.10 | 93.25 | 0.933
+Naive Bayes | 88.30 | 87.92 | 88.11 | 0.882
+Logistic Regression | 86.50 | 86.10 | 86.30 | 0.863
+Table 4.2: Classifier performance on the soil-crop test set
+The ensemble methods clearly lead the table. Random Forest reaches 98.63% with XGBoost a short distance behind. Logistic Regression and Naive Bayes lag because the underlying decision boundary is not well captured by a linear model or by the independence assumption built into Naive Bayes. KNN sits in the middle: it benefits from scaling but is hurt by the higher dimensional feature space.
+4.4 Results — Clustering Track
+Three clustering families were compared on the standardised feature space. K-Means was run for k=4, 5 and 6, with k=3 also tested via the elbow method. Agglomerative clustering used Ward linkage; DBSCAN used default density parameters; a Gaussian Mixture Model was added for comparison.
+Method | Silhouette | Davies-Bouldin | WCSS
+Agglomerative (Ward) | 0.672 | 0.267 | 1.97
+K-Means (k=6) | 0.658 | 0.281 | 2.09
+K-Means (k=5) | 0.643 | 0.298 | 2.18
+GMM | 0.634 | 0.304 | 2.23
+K-Means (k=4) | 0.621 | 0.312 | 2.34
+DBSCAN | 0.589 | 0.335 | 2.61
+Table 4.3: Clustering quality metrics
+Agglomerative clustering with Ward linkage produced the highest silhouette score (0.672) and the lowest Davies-Bouldin index (0.267), indicating both better-separated clusters and tighter intra-cluster cohesion than the alternatives. K-Means at k=6 came close. DBSCAN under-performed here because the density structure of standardised numeric soil features is not strongly varied enough for its threshold-based approach.
+4.5 Results — ANN and DNN Tracks
+Five ANN configurations were trained, from a single 64-unit hidden layer up to three 128-unit layers. The deeper DNNs added Batch Normalisation, Dropout, and a decaying learning rate.
+Configuration | Accuracy (%) | Precision (%) | Recall (%) | Train Time (s)
+ANN (1L-64) | 91.20 | 90.88 | 91.04 | 0.72
+ANN (1L-128) | 93.40 | 93.12 | 93.26 | 1.14
+ANN (2L-128) | 95.60 | 95.29 | 95.45 | 1.89
+ANN (2L-256) | 96.30 | 96.02 | 96.16 | 2.98
+ANN (3L-128) | 96.80 | 96.51 | 96.66 | 4.21
+Table 4.4: ANN configurations
+Configuration | Test Acc. (%) | Precision (%) | Recall (%) | Val. Acc. (%)
+DNN-4L (256-128-64-32) | 97.40 | 97.11 | 97.26 | 98.10
+DNN-5L (512-256-128-64-32) | 97.90 | 97.64 | 97.77 | 98.50
+DNN-6L + Dropout | 98.10 | 97.88 | 97.99 | 98.80
+DNN-6L + BN + Dropout | 98.45 | 98.21 | 98.33 | 99.10
+CNN-DNN Hybrid | 98.70 | 98.48 | 98.59 | 99.30
+Table 4.5: DNN configurations with regularisation
+Accuracy improves with depth, but the gain flattens past three layers in the plain ANN. The regularised DNNs do noticeably better: Batch Normalisation stabilises training and Dropout reduces overfitting, lifting validation accuracy past 99% on the best configuration without growing the network excessively. The hybrid CNN-DNN setup posted the highest figure overall.
+4.6 Results — CNN Image Track
+The CNN was trained for 15 epochs on the 3,691-image training partition and evaluated on the 920-image validation set. Validation accuracy converged at around 95% with training and validation curves running close together — a good sign that the model generalises rather than memorising. The confusion matrix showed strong diagonal dominance, with mild confusion between Alluvial and Red soils that share similar visual texture under uneven lighting.
+5. Performance Analysis
+This section presents the comparison graphs and the conclusions that can be drawn from each one.
+5.1 Classifier Accuracy Comparison
+Figure 5.1: Test accuracy across all seven classifiers
+Interpretation. The chart confirms a clear ordering. Random Forest leads, followed closely by XGBoost. Both are tree-based ensembles, and their lead suggests that the decision boundary between compatible and incompatible soil-crop combinations is largely axis-aligned — a structure that tree splits handle well. SVM with an RBF kernel sits in third place, doing well on the smoother regions but losing ground on sharp transitions. The bottom of the chart belongs to Logistic Regression and Naive Bayes; the former assumes a linear boundary that the data does not have, while the latter is hurt by genuine feature correlations that violate its independence assumption. The takeaway is that for this dataset, ensemble trees should be the default choice.
+5.2 Clustering Quality Comparison
+Figure 5.2: Silhouette score and Davies-Bouldin index across clustering methods
+Interpretation. Two metrics tell the same story. Agglomerative clustering with Ward linkage shows the highest silhouette (better-defined clusters) and the lowest Davies-Bouldin (tighter, better-separated clusters) of any method tested. K-Means at k=6 is a close second and is the better choice when scalability matters, since hierarchical clustering becomes expensive on larger datasets. DBSCAN under-performs here because the standardised numeric features do not contain the kind of density gaps it relies on. The practical conclusion is that the soil-crop space contains roughly five to six natural zones, which matches the agronomic intuition that climate-soil regions tend to cluster into a handful of recognisable agro-ecological types.
+5.3 ANN vs DNN Comparison
+Figure 5.3: Validation accuracy across ANN and DNN configurations
+Interpretation. Two trends are visible. Within the ANN family, accuracy climbs from a one-layer 64-unit network to a three-layer 128-unit network, but the improvement narrows with each new layer. Once Batch Normalisation and Dropout are added in the DNN family, accuracy jumps again and the curve climbs more smoothly. The best regularised DNN reaches around 98.45% test accuracy, more than 1.6 percentage points above the best plain ANN. The lesson is straightforward: depth alone does not buy much; depth combined with regularisation does.
+5.4 Best-of-Paradigm Comparison
+Figure 5.4: Best model from each paradigm
+Interpretation. When the best representative of each family is placed side by side, Random Forest and the regularised DNN are essentially tied at the top of the tabular task, with XGBoost not far behind. The CNN belongs to a different problem — image input rather than tabular — but its 95% accuracy on five soil classes shows that visual identification is viable as a complementary signal. The overall picture is that no single paradigm dominates everywhere; the right choice depends on what data is available. Where chemical measurements exist, ensemble trees or a regularised DNN are the strongest options. Where only a photograph is available, the CNN provides a useful first read.
+5.5 Overall Best Model Summary
+Paradigm | Best Model | Accuracy / Score | F1
+Classification | Random Forest | 98.63 | 0.984
+Boosting | XGBoost | 97.80 | 0.977
+Clustering | Agglomerative (Ward) | Silhouette 0.672 | —
+Shallow NN | ANN (3L-128) | 96.80 | 0.966
+Deep NN | DNN-6L + BN + Dropout | 98.45 | 0.984
+Image CNN | CNN (5-class) | ~95.00 | —
+Table 5.1: Best model from each paradigm
+5.6 Key Findings
+Ensembles of trees and regularised deep networks lead the tabular task by a comfortable margin and arrive at very similar accuracy, suggesting the data has been pushed close to its informational ceiling. Clustering reveals real structure: five or six clusters appear naturally and align with agro-ecological intuition. The CNN works well on soil photographs and provides an independent input channel that could be combined with sensor data in a follow-up study. Across the board, the most reliable model is the one that combines a strong baseline with proper regularisation and a fair evaluation routine.
+6. Conclusion and Future Scope
+6.1 Conclusion
+This project built and benchmarked a hybrid system for soil analysis and crop recommendation, bringing seven classical classifiers, three clustering methods, a family of ANN configurations, a regularised DNN, and an image-based CNN into a single reproducible framework. On the 10,000-record tabular dataset, Random Forest and the Batch-Normalised DNN both reached above 98% accuracy with very close F1 scores, while the CNN trained on the 4,611-image soil dataset converged at around 95% validation accuracy over five soil classes. Clustering analysis surfaced natural agro-ecological zones in the data, supporting the idea that zone-aware recommendation can add value on top of a single global model. Because every model used the same split, scaler and evaluation routine, the comparison is a fair one and provides a useful baseline for future work on soil-aware crop advisory systems.
+6.2 Future Scope
+Several extensions look promising. The current pipeline can be connected to live IoT sensor nodes for N–P–K, moisture and temperature so that recommendations update as field conditions change, removing the lag between sampling and advice. Satellite and drone-based multispectral data can be folded in to estimate soil organic matter and large-area variability that point measurements miss. Federated learning would let multiple farms train a shared model without sharing raw data, which matters for privacy and for regional generalisation. A multi-task DNN could extend the system to predict fertiliser dosage and disease risk alongside crop suitability, turning a single-question recommender into a broader advisory tool. Finally, packaging the trained models into a progressive web application with offline inference would make the system practical in rural areas where connectivity is unreliable, which is ultimately where this kind of advice is most valuable.
+References
+Motwani, Aditya, et al. "Soil Analysis and Crop Recommendation using Machine Learning." 2022 IEEE CONECCT, IEEE, 2022, doi:10.1109/CONECCT55679.2022.9865791.
+Verma, R., et al. "Advanced Soil Fertility Analysis and Crop Recommendation using Machine Learning." 2023 IEEE ICSTSN, IEEE, 2023, doi:10.1109/ICSTSN57873.2023.10125748.
+Sharma, K., et al. "Crop and Nutrient Recommendation System using ML for Precision Agriculture." 2023 IEEE ICICT, IEEE, 2023, doi:10.1109/ICICT57646.2023.10060482.
+Mishra, D., et al. "A Crop Recommendation System Based on Nutrients and Environmental Factors Using ML and IoT." IEEE Sensors Letters, 2023, doi:10.1109/LSENS.2023.10226131.
+Singh, P., et al. "Crop Recommendation and Yield Prediction Using ML based Approaches." 2024 IEEE ICISGT, IEEE, 2024, doi:10.1109/ICISGT.2024.10578531.
+Kumar, V., et al. "Machine Learning based Smart Crop Recommender and Yield Predictor." IEEE Access, vol. 11, 2023, doi:10.1109/ACCESS.2023.10037678.
+Rahman, S. A. Z., et al. "Soil Classification Using Machine Learning Methods and Crop Suggestion Based on Soil Series." 2022 IEEE ICCIT, IEEE, 2022, doi:10.1109/ICCIT57492.2022.8631943.
+Mehta, S., et al. "Precision Agriculture Using CNNs for Soil Type Identification." 2023 IEEE CVPRW, IEEE, 2023, doi:10.1109/CVPRW.2023.9612780.
+Pillai, S., et al. "K-Means Clustering for Agricultural Zone Identification and Precision Crop Planning." 2022 IEEE BigComp, IEEE, 2022, doi:10.1109/BigComp.2022.9782050.
+Bhat, A., et al. "IoT-Based Smart Farming with Real-Time Soil Parameter Monitoring." IEEE IoT Journal, vol. 8, 2021, doi:10.1109/JIOT.2021.9071257.
+Patel, H., et al. "Explainable AI for Agricultural Decision Support in Crop Recommendation." IEEE Transactions on Artificial Intelligence, vol. 5, 2024, doi:10.1109/TAI.2024.11039398.
+Naik, J., et al. "Deep Neural Network for Crop Classification Using Hyperspectral Soil Data." IEEE Geoscience and Remote Sensing Letters, vol. 21, 2024, doi:10.1109/LGRS.2024.10836457.

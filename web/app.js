@@ -11,6 +11,13 @@ const formatJSON = (obj) => JSON.stringify(obj, null, 2);
 
 let soilAnalysisLoaded = false;
 let imageAnalysisLoaded = false;
+let compareState = {
+  originalSrc: "",
+  enhancedSrc: "",
+  originalLabel: "Original",
+  enhancedLabel: "Enhanced",
+  reversed: false,
+};
 
 // --- i18n (English default + Marathi toggle) ---
 const I18N = (() => {
@@ -547,36 +554,6 @@ function renderCNNResult(result) {
   document.getElementById("cnn-confidence-bar").style.width = `${probability}%`;
   document.getElementById("cnn-confidence-percent").textContent = `${probability}%`;
 
-  // --- Visual Decision Support Trace ---
-  const ganCard = document.getElementById('gan-trace-card');
-  const ganGrid = document.getElementById('gan-augmentation-grid');
-  if (ganCard && ganGrid) {
-    ganCard.classList.remove('hidden');
-    const previewImg = document.getElementById("image-preview");
-    const enhancedSrc = result.enhanced_image || previewImg.src; // fallback
-    // Image Enhancement Pipeline for Agronomist Verification
-    const augSteps = [
-      { label: 'Raw Sensor Input', img: previewImg.src },
-      { label: 'Noise Reduction', img: previewImg.src },
-      { label: 'Micro-Texture Synthesis', img: previewImg.src },
-      { label: 'Agronomist Enhanced View', img: enhancedSrc, class: 'enhanced' }
-    ];
-
-    ganGrid.innerHTML = augSteps.map(step => `
-      <div class="aug-item ${step.class || ''}">
-        <img src="${step.img}" alt="${step.label}"
-             style="${step.class === 'enhanced' ? 'filter: contrast(1.1) brightness(1.2) saturate(1.2)' : (step.label === 'Noise Reduction' ? 'filter: blur(1px);' : '')}"
-        >
-        <div class="aug-label">${step.label}</div>
-      </div>
-    `).join('');
-
-    // Add zoom to GAN trace images
-    ganGrid.querySelectorAll('img').forEach(img => {
-      img.addEventListener('click', () => openZoom(img.src, img.alt));
-    });
-  }
-
   // --- New: Update Soil Profile and Pre-fill Tab 2 ---
   if (result.profile) {
     window.CURRENT_SOIL_PROFILE = result.profile; // Store for the agent
@@ -667,6 +644,34 @@ function initModals() {
       modal.classList.add("hidden");
     }
   });
+
+  const compareModal = document.getElementById("compare-modal");
+  const compareClose = compareModal?.querySelector(".compare-close");
+  const comparePrev = document.getElementById("compare-prev");
+  const compareNext = document.getElementById("compare-next");
+  const compareSwap = document.getElementById("swap-compare-btn");
+
+  if (compareClose) {
+    compareClose.addEventListener("click", () => compareModal.classList.add("hidden"));
+  }
+  if (comparePrev) {
+    comparePrev.addEventListener("click", () => toggleCompareSides());
+  }
+  if (compareNext) {
+    compareNext.addEventListener("click", () => toggleCompareSides());
+  }
+  if (compareSwap) {
+    compareSwap.addEventListener("click", () => toggleCompareSides());
+  }
+  window.addEventListener("keydown", (event) => {
+    if (!compareModal || compareModal.classList.contains("hidden")) return;
+    if (event.key === "Escape") {
+      compareModal.classList.add("hidden");
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      toggleCompareSides();
+    }
+  });
 }
 
 function initImageZoom() {
@@ -691,6 +696,45 @@ function openZoom(src, caption) {
   img.src = src;
   cap.textContent = caption || "Image View";
   modal.classList.remove("hidden");
+}
+
+function updateCompareModal() {
+  const compareModal = document.getElementById("compare-modal");
+  const leftImg = document.getElementById("compare-left-image");
+  const rightImg = document.getElementById("compare-right-image");
+  const leftLabel = document.getElementById("compare-left-label");
+  const rightLabel = document.getElementById("compare-right-label");
+  const caption = document.getElementById("compare-caption");
+  if (!compareModal || !leftImg || !rightImg || !leftLabel || !rightLabel || !caption) return;
+
+  const leftIsOriginal = !compareState.reversed;
+  leftImg.src = leftIsOriginal ? compareState.originalSrc : compareState.enhancedSrc;
+  rightImg.src = leftIsOriginal ? compareState.enhancedSrc : compareState.originalSrc;
+  leftLabel.textContent = leftIsOriginal ? compareState.originalLabel : compareState.enhancedLabel;
+  rightLabel.textContent = leftIsOriginal ? compareState.enhancedLabel : compareState.originalLabel;
+  caption.textContent = leftIsOriginal
+    ? `${compareState.originalLabel} | ${compareState.enhancedLabel}`
+    : `${compareState.enhancedLabel} | ${compareState.originalLabel}`;
+}
+
+function openCompareModal(originalSrc, enhancedSrc, meta = {}) {
+  const compareModal = document.getElementById("compare-modal");
+  if (!compareModal || !originalSrc || !enhancedSrc) return;
+
+  compareState.originalSrc = originalSrc;
+  compareState.enhancedSrc = enhancedSrc;
+  compareState.originalLabel = meta.originalLabel || "Original";
+  compareState.enhancedLabel = meta.enhancedLabel || "Enhanced";
+  compareState.reversed = false;
+  updateCompareModal();
+  compareModal.classList.remove("hidden");
+}
+
+function toggleCompareSides() {
+  const compareModal = document.getElementById("compare-modal");
+  if (!compareModal || compareModal.classList.contains("hidden")) return;
+  compareState.reversed = !compareState.reversed;
+  updateCompareModal();
 }
 
 // --- Chatbot TTS (Text-to-Speech) ---
@@ -764,6 +808,53 @@ async function speak(text) {
   }
 }
 
+function renderEnhancementComparison(originalSrc, enhancedSrc, meta = {}) {
+  const ganCard = document.getElementById("gan-trace-card");
+  const ganGrid = document.getElementById("gan-augmentation-grid");
+  if (!ganCard || !ganGrid) return;
+
+  if (!originalSrc || !enhancedSrc) return;
+
+  const originalLabel = meta.originalLabel || "Original";
+  const enhancedLabel = meta.enhancedLabel || "Real-ESRGAN Enhanced";
+  compareState.originalSrc = originalSrc;
+  compareState.enhancedSrc = enhancedSrc;
+  compareState.originalLabel = originalLabel;
+  compareState.enhancedLabel = enhancedLabel;
+  ganCard.classList.remove("hidden");
+  ganGrid.innerHTML = `
+    <div class="aug-item comparison-item">
+      <img src="${originalSrc}" alt="Original Image">
+      <div class="aug-label">${originalLabel}</div>
+    </div>
+    <div class="aug-item comparison-item enhanced">
+      <img src="${enhancedSrc}" alt="Real-ESRGAN Enhanced Image">
+      <div class="aug-label">${enhancedLabel}</div>
+    </div>
+  `;
+
+  ganGrid.querySelectorAll("img").forEach((img) => {
+    img.addEventListener("click", () => openZoom(img.src, img.alt));
+  });
+
+  const compareBtn = document.getElementById("open-compare-btn");
+  if (compareBtn) {
+    compareBtn.onclick = () => openCompareModal(originalSrc, enhancedSrc, {
+      originalLabel,
+      enhancedLabel,
+    });
+  }
+
+  const swapBtn = document.getElementById("swap-compare-btn");
+  if (swapBtn) {
+    swapBtn.onclick = () => {
+      toggleCompareSides();
+    };
+  }
+
+  ganCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function init() {
   // i18n must be ready before we set up UI strings/placeholders.
   // (async init runs in DOMContentLoaded below)
@@ -782,6 +873,57 @@ function init() {
   });
 
   document.getElementById("tabular-form").addEventListener("submit", handleTabularSubmit);
+  // Enhance Image button handler
+  const enhanceBtn = document.getElementById('enhance-btn');
+  if (enhanceBtn) {
+    enhanceBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('soil-image');
+      const file = fileInput && fileInput.files[0];
+      if (!file) {
+        alert('Please select an image first.');
+        return;
+      }
+      const previewImg = document.getElementById("image-preview");
+      const previewContainer = document.getElementById("image-preview-container");
+      const originalLabel = enhanceBtn.innerHTML;
+      const originalSrc = previewImg?.src || "";
+      enhanceBtn.disabled = true;
+      enhanceBtn.textContent = "Enhancing...";
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        try {
+          const resp = await fetch(`${window.location.origin}/api/enhance-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64 })
+          });
+          const data = await resp.json();
+          if (!resp.ok) {
+            throw new Error(data.error || 'Enhancement failed');
+          }
+          const enhanced = data.enhanced_image;
+          if (previewContainer) {
+            previewContainer.classList.remove("hidden");
+          }
+          const originalSize = Array.isArray(data.original_size) ? data.original_size.join("x") : "";
+          const enhancedSize = Array.isArray(data.enhanced_size) ? data.enhanced_size.join("x") : "";
+          renderEnhancementComparison(originalSrc || previewImg?.src || "", enhanced, {
+            originalLabel: originalSize ? `Original (${originalSize})` : "Original",
+            enhancedLabel: enhancedSize ? `Real-ESRGAN Enhanced (${enhancedSize}, x${data.scale || 4})` : "Real-ESRGAN Enhanced",
+          });
+        } catch (err) {
+          console.error('Enhancement error:', err);
+          alert(err.message || 'Enhancement failed');
+        } finally {
+          enhanceBtn.disabled = false;
+          enhanceBtn.innerHTML = originalLabel;
+        }
+      };
+    });
+  }
   document.getElementById("soil-form").addEventListener("submit", handleImageSubmit);
 
   // Chat TTS delegation

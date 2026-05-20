@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import re
+import threading
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,7 @@ from PIL import Image
 from agent import FarmAgent
 from analysis.image_analysis import ImageAnalysisService
 from analysis.soil_analysis import SoilAnalysisService
+from soil_enhancer import SoilImageEnhancer
 
 # Global Agent Instance
 # Soil Profiles Database (Scientific Baselines for Farmers)
@@ -69,6 +71,9 @@ SOIL_PROFILES = {
 
 
 FARM_AGENT = FarmAgent()
+SOIL_IMAGE_ENHANCER: SoilImageEnhancer | None = None
+SOIL_IMAGE_ENHANCER_LOCK = threading.Lock()
+SOIL_IMAGE_ENHANCE_ACTIVE = threading.Lock()
 
 
 
@@ -127,16 +132,25 @@ TARGET_SOIL_CLASSES = [
 
 
 
-SOIL_MODEL_PATH = first_existing_path(
-    FINAL_MODELS_DIR / "soil_cnn_updated_model.pth",
-    MODELS_DIR / "soil_cnn_updated_model.pth",
-    MODELS_DIR / "soil_cnn_model_7class.pth",
-)
-SOIL_MODEL_METRICS_PATH = first_existing_path(
-    FINAL_MODELS_DIR / "soil_cnn_updated_model_metrics.json",
-    MODELS_DIR / "soil_cnn_updated_model_metrics.json",
-    MODELS_DIR / "soil_cnn_model_7class_metrics.json",
-)
+SOIL_RESNET_PATH = MODELS_DIR / "soil_resnet_updated_model.pth"
+SOIL_RESNET_METRICS_PATH = MODELS_DIR / "soil_resnet_updated_model_metrics.json"
+
+USE_RESNET = SOIL_RESNET_PATH.exists()
+
+if USE_RESNET:
+    SOIL_MODEL_PATH = SOIL_RESNET_PATH
+    SOIL_MODEL_METRICS_PATH = SOIL_RESNET_METRICS_PATH
+else:
+    SOIL_MODEL_PATH = first_existing_path(
+        FINAL_MODELS_DIR / "soil_cnn_updated_model.pth",
+        MODELS_DIR / "soil_cnn_updated_model.pth",
+        MODELS_DIR / "soil_cnn_model_7class.pth",
+    )
+    SOIL_MODEL_METRICS_PATH = first_existing_path(
+        FINAL_MODELS_DIR / "soil_cnn_updated_model_metrics.json",
+        MODELS_DIR / "soil_cnn_updated_model_metrics.json",
+        MODELS_DIR / "soil_cnn_model_7class_metrics.json",
+    )
 
 try:
     SOIL_ENCODER = joblib.load(SOIL_ENCODER_PATH)
@@ -338,11 +352,11 @@ def inspect_soil_model_binary() -> dict[str, Any]:
         "path": str(SOIL_MODEL_PATH),
         "size_mb": round(SOIL_MODEL_PATH.stat().st_size / (1024 * 1024), 2),
         "input_shape_hint": [224, 224, 3],
-        "framework": "PyTorch",
+        "framework": "PyTorch (ResNet18)" if USE_RESNET else "PyTorch",
         "output_classes": output_classes,
         "metrics_path": str(SOIL_MODEL_METRICS_PATH) if SOIL_MODEL_METRICS_PATH.exists() else None,
-        "best_val_accuracy": SOIL_MODEL_METRICS.get("best_val_accuracy"),
-        "test_accuracy": SOIL_MODEL_METRICS.get("test_accuracy"),
+        "best_val_accuracy": SOIL_MODEL_METRICS.get("best_val_acc") if USE_RESNET else SOIL_MODEL_METRICS.get("best_val_accuracy"),
+        "test_accuracy": SOIL_MODEL_METRICS.get("test_acc") if USE_RESNET else SOIL_MODEL_METRICS.get("test_accuracy"),
     }
 
 
@@ -515,7 +529,16 @@ def predict_soil(payload: dict[str, Any]) -> dict[str, Any]:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_classes = len(SOIL_ENCODER_CLASSES)
-    model = SoilCNN(num_classes=num_classes).to(device)
+    
+    if USE_RESNET:
+        from torchvision import models
+        model = models.resnet18(weights=None)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
+        model = model.to(device)
+    else:
+        model = SoilCNN(num_classes=num_classes).to(device)
+        
     model.load_state_dict(torch.load(SOIL_MODEL_PATH, map_location=device))
     model.eval()
 
@@ -541,30 +564,6 @@ def predict_soil(payload: dict[str, Any]) -> dict[str, Any]:
         reverse=True,
     )
 
-    # --- Visual Decision Support: Micro-Texture Enhancement ---
-    # This pipeline enhances soil micro-textures, cracks, and mineral hues 
-    # to help agronomists visually verify the soil condition,
-    # compensating for low-quality smartphone camera captures.
-    from PIL import ImageEnhance, ImageFilter
-    
-    # 1. Noise Reduction
-    enhanced_img = image.filter(ImageFilter.SMOOTH_MORE)
-    # 2. Micro-Texture Synthesis
-    enhancer = ImageEnhance.Sharpness(enhanced_img)
-    enhanced_img = enhancer.enhance(2.5)
-    enhancer = ImageEnhance.Contrast(enhanced_img)
-    enhanced_img = enhancer.enhance(1.5)
-    # 3. Additional enhancements for visible effect
-    enhancer = ImageEnhance.Brightness(enhanced_img)
-    enhanced_img = enhancer.enhance(1.2)
-    enhancer = ImageEnhance.Color(enhanced_img)
-    enhanced_img = enhancer.enhance(1.2)
-    
-    # Save enhanced image to base64
-    buffered = io.BytesIO()
-    enhanced_img.save(buffered, format="JPEG")
-    enhanced_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-
     soil_type = SOIL_ENCODER_CLASSES[top_index]
     profile = SOIL_PROFILES.get(soil_type, {})
 
@@ -572,7 +571,6 @@ def predict_soil(payload: dict[str, Any]) -> dict[str, Any]:
         "label": soil_type,
         "top_probability": ranked[0]["probability"],
         "ranked_predictions": ranked,
-        "enhanced_image": f"data:image/jpeg;base64,{enhanced_base64}",
         "profile": profile
     }
 
@@ -672,11 +670,67 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[st
 
 
 class AppHandler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path or "/"
+    @staticmethod
+    def _get_soil_image_enhancer() -> SoilImageEnhancer:
+        global SOIL_IMAGE_ENHANCER
+        with SOIL_IMAGE_ENHANCER_LOCK:
+            if SOIL_IMAGE_ENHANCER is None:
+                SOIL_IMAGE_ENHANCER = SoilImageEnhancer()
+            return SOIL_IMAGE_ENHANCER
+
+    @staticmethod
+    def _normalize_path(raw_path: str) -> str:
+        path = raw_path or "/"
         if path != "/":
             path = path.rstrip("/")
+        return path
+
+    def _handle_enhance_image(self, payload: dict[str, Any]) -> None:
+        if not SOIL_IMAGE_ENHANCE_ACTIVE.acquire(blocking=False):
+            json_response(
+                self,
+                HTTPStatus.TOO_MANY_REQUESTS,
+                {"error": "Enhancement already running. Please wait a moment."},
+            )
+            return
+
+        image_b64 = payload.get("image")
+        if not image_b64:
+            json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Missing image data"})
+            SOIL_IMAGE_ENHANCE_ACTIVE.release()
+            return
+
+        # Remove any data URI prefix so the decoder only sees raw base64.
+        if isinstance(image_b64, str) and image_b64.startswith("data:image"):
+            image_b64 = image_b64.split(",", 1)[1]
+
+        try:
+            enhancer = self._get_soil_image_enhancer()
+            img_bytes = base64.b64decode(image_b64)
+            img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            original_size = img.size
+            enhanced = enhancer.enhance_image(img)
+            buf = io.BytesIO()
+            enhanced.save(buf, format="JPEG")
+            enhanced_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            json_response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "enhanced_image": f"data:image/jpeg;base64,{enhanced_b64}",
+                    "original_size": list(original_size),
+                    "enhanced_size": list(enhanced.size),
+                    "scale": 4,
+                },
+            )
+        except Exception as exc:
+            json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        finally:
+            SOIL_IMAGE_ENHANCE_ACTIVE.release()
+
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        path = self._normalize_path(parsed.path)
         query = urllib.parse.parse_qs(parsed.query or "")
 
         if path == "/api/status":
@@ -802,6 +856,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
 
+        if path == "/api/enhance-image" or path.endswith("/api/enhance-image"):
+            # Support legacy GET calls that may still be cached in the browser.
+            image_b64 = (query.get("image") or [None])[0]
+            if not image_b64:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Missing image data"})
+                return
+            self._handle_enhance_image({"image": image_b64})
+            return
+
         if path.startswith("/api/soil/analysis"):
             json_response(
                 self,
@@ -827,9 +890,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path or "/"
-        if path != "/":
-            path = path.rstrip("/")
+        path = self._normalize_path(parsed.path)
 
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
@@ -852,6 +913,9 @@ class AppHandler(BaseHTTPRequestHandler):
             if path == "/api/agent/chat":
                 reply = FARM_AGENT.chat(payload.get("message", ""))
                 json_response(self, HTTPStatus.OK, {"reply": reply})
+                return
+            if path == "/api/enhance-image" or path.endswith("/api/enhance-image"):
+                self._handle_enhance_image(payload)
                 return
             json_response(self, HTTPStatus.NOT_FOUND, {"error": "Not found"})
         except Exception as exc:

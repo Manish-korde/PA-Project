@@ -75,7 +75,10 @@
                 <button type="submit" class="submit-btn primary-btn">
                   <span data-i18n="upload.submit">Analyze Soil Image</span>
                 </button>
-              </form>
+                <button type="button" id="enhance-btn" class="secondary-btn">
+                  <span data-i18n="upload.enhance">Enhance Image</span>
+                </button>
+                </form>
             </div>
 
             <div id="cnn-result-card" class="card result-card hidden">
@@ -123,20 +126,25 @@
               </div>
             </div>
 
-            <!-- Agronomist Visual Decision Support -->
+            <!-- Real-ESRGAN comparison -->
             <div id="gan-trace-card" class="card result-card hidden" style="margin-top: 1rem; border-top: 2px solid var(--secondary);">
               <div class="result-header">
-                <div class="status-badge" style="background: var(--secondary);"><i class="fa-solid fa-magnifying-glass-plus"></i> Visual Decision Support</div>
+                <div class="status-badge" style="background: var(--secondary);"><i class="fa-solid fa-magnifying-glass-plus"></i> Real-ESRGAN Comparison</div>
               </div>
               <div class="panel-header" style="padding: 1rem 0; text-align: left;">
-                <h4 style="color: var(--primary); margin: 0;">Micro-Texture Enhancement Trace</h4>
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.2rem 0;">Enhances soil micro-textures, cracks, and mineral hues for human expert verification.</p>
+                <h4 style="color: var(--primary); margin: 0;">Original vs Enhanced</h4>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.2rem 0;">Compare the uploaded image with the Real-ESRGAN enhanced output.</p>
               </div>
               <div id="gan-augmentation-grid" class="augmentation-grid">
                 <!-- Filled by JS -->
               </div>
-              <div class="panel-note" style="margin-top: 1rem; text-align: left; background: rgba(52, 211, 153, 0.05);">
-                <i class="fa-solid fa-circle-info"></i> <strong>Agronomist Verification:</strong> Since field photos are often taken with low-quality smartphone cameras, this enhancement pipeline dynamically recovers high-frequency textural details, helping remote agronomists visually verify the AI's classification.
+              <div style="margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                <button type="button" id="open-compare-btn" class="secondary-btn small-btn">
+                  Fullscreen Compare
+                </button>
+                <button type="button" id="swap-compare-btn" class="secondary-btn small-btn">
+                  Swap Sides
+                </button>
               </div>
             </div>
 
@@ -272,7 +280,7 @@
                 </div>
                 
                 <div id="action-plan-section" class="details-content markdown-body" style="text-align: left; margin-top: 1.5rem; display: none;">
-                  <h4 style="margin-top: 0; color: var(--primary);">Agronomist AI Plan</h4>
+                  <h4 style="margin-top: 0; color: var(--primary);">Action Plan</h4>
                   <div id="action-plan-content">Generating...</div>
                 </div>
 
@@ -360,6 +368,34 @@
           <button class="close-btn zoom-close">&times;</button>
           <img id="zoomed-image" src="" alt="Enlarged Plot">
           <div id="zoom-caption" class="zoom-caption"></div>
+        </div>
+      </div>
+
+      <!-- Side-by-side Compare Modal -->
+      <div id="compare-modal" class="modal hidden">
+        <div class="modal-content compare-content">
+          <button class="close-btn compare-close">&times;</button>
+          <div class="compare-toolbar">
+            <div id="compare-caption" class="compare-caption">Original vs Enhanced</div>
+            <div class="compare-actions">
+              <button type="button" id="compare-prev" class="compare-arrow-btn" aria-label="Swap comparison panes">
+                <i class="fa-solid fa-arrow-left"></i>
+              </button>
+              <button type="button" id="compare-next" class="compare-arrow-btn" aria-label="Swap comparison panes">
+                <i class="fa-solid fa-arrow-right"></i>
+              </button>
+            </div>
+          </div>
+          <div class="compare-grid">
+            <div class="compare-pane">
+              <img id="compare-left-image" src="" alt="Left compare image">
+              <div id="compare-left-label" class="compare-label">Original</div>
+            </div>
+            <div class="compare-pane">
+              <img id="compare-right-image" src="" alt="Right compare image">
+              <div id="compare-right-label" class="compare-label">Enhanced</div>
+            </div>
+          </div>
         </div>
       </div>
 
